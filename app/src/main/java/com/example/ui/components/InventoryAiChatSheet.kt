@@ -286,17 +286,11 @@ fun InventoryAiChatSheet(
                                     val result = geminiService.parseItemFromConversation(prompt, locsStr)
                                     isProcessing = false
 
-                                    if (result.isSuccess) {
-                                        val parsed = result.getOrNull()!!
-                                        messages = messages + ChatItemMessage(
-                                            isUser = false,
-                                            text = "I parsed the item details. Review and tap confirm to add to your inventory:",
-                                            parsedItem = parsed
-                                        )
+                                    val finalParsed = if (result.isSuccess) {
+                                        result.getOrNull()!!
                                     } else {
-                                        // Fallback manual structure if offline or no key
-                                        val fallback = SingleItemScanResult(
-                                            name = prompt.take(30).trim(),
+                                        SingleItemScanResult(
+                                            name = prompt.take(30).trim().ifBlank { "Household Item" },
                                             brand = null,
                                             manufacturer = null,
                                             model = null,
@@ -313,12 +307,29 @@ fun InventoryAiChatSheet(
                                             confidence = 0.9f,
                                             aiSummary = "Added via conversation"
                                         )
-                                        messages = messages + ChatItemMessage(
-                                            isUser = false,
-                                            text = "Saved note locally. Tap confirm to add:",
-                                            parsedItem = fallback
-                                        )
                                     }
+
+                                    // Match location if mentioned
+                                    val matchedLoc = locations.find { loc ->
+                                        prompt.contains(loc.name, ignoreCase = true)
+                                    } ?: locations.firstOrNull()
+
+                                    // Generate local sample photo
+                                    val targetFile = File.createTempFile("chat_item_", ".jpg", context.cacheDir)
+                                    SampleScanGenerator.generateSampleImageFile(targetFile, (0..5).random())
+
+                                    val saved = inventoryRepository.saveNewItemFromScan(
+                                        scanResult = finalParsed,
+                                        imageFile = targetFile,
+                                        locationId = matchedLoc?.id
+                                    )
+
+                                    messages = messages + ChatItemMessage(
+                                        isUser = false,
+                                        text = "✅ Saved '${saved.name}' into your inventory at ${matchedLoc?.name ?: "home"}!",
+                                        parsedItem = finalParsed,
+                                        savedItemId = saved.id
+                                    )
                                 }
                             }
                         },

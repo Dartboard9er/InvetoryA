@@ -88,6 +88,9 @@ interface LocationDao {
     @Query("SELECT * FROM locations ORDER BY name ASC")
     fun getAllLocations(): Flow<List<LocationEntity>>
 
+    @Query("SELECT * FROM locations ORDER BY name ASC")
+    suspend fun getLocationsList(): List<LocationEntity>
+
     @Query("SELECT * FROM locations WHERE id = :id LIMIT 1")
     suspend fun getLocationById(id: String): LocationEntity?
 
@@ -248,11 +251,17 @@ interface ChatMessageDao {
     @Query("SELECT * FROM chat_messages WHERE conversationId = :convId ORDER BY timestamp ASC")
     fun getMessagesForConversation(convId: String = "default"): Flow<List<ChatMessageEntity>>
 
+    @Query("SELECT * FROM chat_messages ORDER BY timestamp ASC")
+    fun getAllMessages(): Flow<List<ChatMessageEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity)
 
     @Query("DELETE FROM chat_messages WHERE conversationId = :convId")
     suspend fun clearMessages(convId: String = "default")
+
+    @Query("DELETE FROM chat_messages")
+    suspend fun clearAllMessages()
 }
 
 @Dao

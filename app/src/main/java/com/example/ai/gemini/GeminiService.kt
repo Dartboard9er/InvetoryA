@@ -497,7 +497,7 @@ class GeminiService(private val context: Context) {
                     TroubleshootAdvice(
                         summary = json.optString("summary", "Troubleshooting guide"),
                         steps = stepsList,
-                        caution = json.optString("caution", null)
+                        caution = if (json.has("caution")) json.optString("caution") else null
                     )
                 )
             }
@@ -626,26 +626,35 @@ class GeminiService(private val context: Context) {
     }
 
     private fun encodeImageToBase64(file: File, maxDimension: Int): String {
-        val original = BitmapFactory.decodeFile(file.absolutePath) ?: throw IllegalArgumentException("Cannot decode image")
-        var width = original.width
-        var height = original.height
+        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, boundsOptions)
+        val origW = boundsOptions.outWidth
+        val origH = boundsOptions.outHeight
+        if (origW <= 0 || origH <= 0) throw IllegalArgumentException("Cannot decode image bounds")
 
-        val scaled: Bitmap = if (width > maxDimension || height > maxDimension) {
+        var sampleSize = 1
+        while (origW / (sampleSize * 2) >= maxDimension || origH / (sampleSize * 2) >= maxDimension) {
+            sampleSize *= 2
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val sampledBitmap = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+            ?: throw IllegalArgumentException("Cannot decode image")
+
+        val width = sampledBitmap.width
+        val height = sampledBitmap.height
+
+        val finalBitmap: Bitmap = if (width > maxDimension || height > maxDimension) {
             val ratio = width.toFloat() / height.toFloat()
-            if (width > height) {
-                width = maxDimension
-                height = (maxDimension / ratio).toInt()
-            } else {
-                height = maxDimension
-                width = (maxDimension * ratio).toInt()
-            }
-            Bitmap.createScaledBitmap(original, width, height, true)
+            val targetW = if (width > height) maxDimension else (maxDimension * ratio).toInt()
+            val targetH = if (width > height) (maxDimension / ratio).toInt() else maxDimension
+            Bitmap.createScaledBitmap(sampledBitmap, targetW.coerceAtLeast(1), targetH.coerceAtLeast(1), true)
         } else {
-            original
+            sampledBitmap
         }
 
         val output = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 85, output)
+        finalBitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
         return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
     }
 }

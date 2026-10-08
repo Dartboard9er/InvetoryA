@@ -1,10 +1,13 @@
 package com.example.data.repository
 
 import android.content.Context
+import com.example.ai.gemini.GeminiService
+import com.example.ai.gemini.SingleItemScanResult
 import com.example.data.local.HomeAiDatabase
 import com.example.data.local.entities.ChatMessageEntity
+import com.example.data.local.entities.ItemEntity
+import com.example.data.local.entities.LocationEntity
 import com.example.data.local.files.LocalFileManager
-import com.example.ai.gemini.GeminiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -25,7 +28,11 @@ class AssistantRepository(
     private val chatMessageDao = database.chatMessageDao()
 
     fun getMessagesForMode(mode: com.example.ai.modes.AssistantMode): Flow<List<ChatMessageEntity>> {
-        return chatMessageDao.getMessagesForConversation(mode.id)
+        return if (mode == com.example.ai.modes.AssistantMode.HOME_AI) {
+            chatMessageDao.getAllMessages()
+        } else {
+            chatMessageDao.getMessagesForConversation(mode.id)
+        }
     }
 
     suspend fun sendMessage(userText: String, mode: com.example.ai.modes.AssistantMode): Result<String> = withContext(Dispatchers.IO) {
@@ -41,6 +48,124 @@ class AssistantRepository(
             timestamp = now
         )
         chatMessageDao.insertMessage(userMsg)
+
+        val cleanText = userText.trim()
+        val lower = cleanText.lowercase()
+
+        // Detect if this is an item addition request
+        val isAddAction = lower.startsWith("add ") || lower.startsWith("added ") ||
+                lower.startsWith("bought ") || lower.startsWith("new item ") ||
+                lower.startsWith("record ") || lower.startsWith("store ") ||
+                lower.startsWith("put ") || lower.startsWith("save ") ||
+                (lower.contains(" add ") && !lower.contains("how do i add")) ||
+                (lower.contains(" added ") && !lower.contains("who added")) ||
+                (lower.contains(" put ") && (lower.contains(" in ") || lower.contains(" to ") || lower.contains(" on ")))
+
+        // Detect if this is a relocation request
+        val isRelocateAction = !isAddAction && (
+                lower.startsWith("move ") || lower.startsWith("moved ") ||
+                lower.startsWith("relocate ") || lower.startsWith("relocated ") ||
+                (lower.contains(" moved ") && (lower.contains(" to ") || lower.contains(" into ") || lower.contains(" in ")))
+        )
+
+        if (isAddAction) {
+            val locations = database.locationDao().getLocationsList()
+            val locsSummary = locations.joinToString(", ") { "${it.name} (${it.type})" }
+
+            val parsedResult: SingleItemScanResult? = if (geminiService.getApiKey().isNotEmpty()) {
+                try {
+                    val res = geminiService.parseItemFromConversation(userText, locsSummary)
+                    res.getOrNull()
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+
+            val finalParsed = parsedResult ?: parseItemLocally(userText, locations)
+
+            val matchedLoc = locations.find { loc ->
+                userText.contains(loc.name, ignoreCase = true)
+            } ?: locations.firstOrNull()
+
+            val tempFile = File.createTempFile("assistant_add_", ".jpg")
+            com.example.util.SampleScanGenerator.generateSampleImageFile(tempFile, (0..5).random())
+
+            val savedItem = inventoryRepository.saveNewItemFromScan(
+                scanResult = finalParsed,
+                imageFile = tempFile,
+                locationId = matchedLoc?.id
+            )
+            tempFile.delete()
+
+            val locationName = matchedLoc?.name ?: "Home"
+            val replyText = buildString {
+                append("✅ Added to Inventory!\n\n")
+                append("• Item: ${savedItem.name}\n")
+                if (!savedItem.brand.isNullOrEmpty() || !savedItem.model.isNullOrEmpty()) {
+                    append("• Details: ${listOfNotNull(savedItem.brand, savedItem.model).joinToString(" ")}\n")
+                }
+                append("• Location: $locationName\n")
+                append("• Category: ${savedItem.category}\n")
+                append("• Quantity: ${savedItem.quantity}\n\n")
+                append("I've saved this item in your inventory database. You can view, search, or edit it under the Inventory tab.")
+            }
+
+            val assistantMsg = ChatMessageEntity(
+                id = UUID.randomUUID().toString(),
+                conversationId = conversationId,
+                role = "ASSISTANT",
+                text = replyText,
+                timestamp = System.currentTimeMillis()
+            )
+            chatMessageDao.insertMessage(assistantMsg)
+            return@withContext Result.success(replyText)
+        }
+
+        if (isRelocateAction) {
+            val locations = database.locationDao().getLocationsList()
+            val matchedLoc = locations.find { loc ->
+                userText.contains(loc.name, ignoreCase = true)
+            }
+
+            val allCandidates = database.itemDao().findMatchingCandidates("")
+            val matchedItem = allCandidates.firstOrNull { item ->
+                userText.contains(item.name, ignoreCase = true) ||
+                        (!item.brand.isNullOrEmpty() && userText.contains(item.brand, ignoreCase = true)) ||
+                        (!item.model.isNullOrEmpty() && userText.contains(item.model, ignoreCase = true))
+            }
+
+            if (matchedItem != null && matchedLoc != null) {
+                inventoryRepository.updateItem(
+                    matchedItem.copy(
+                        currentLocationId = matchedLoc.id,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+                val history = com.example.data.local.entities.ItemLocationHistoryEntity(
+                    id = UUID.randomUUID().toString(),
+                    itemId = matchedItem.id,
+                    locationId = matchedLoc.id,
+                    timestamp = System.currentTimeMillis(),
+                    source = "ASSISTANT_CHAT",
+                    confidence = 1.0f,
+                    note = userText
+                )
+                database.itemLocationHistoryDao().insertHistory(history)
+
+                val replyText = "✅ Location Updated!\n\n• Item: ${matchedItem.name}\n• New Location: ${matchedLoc.name}\n\nI've updated this in your household inventory database."
+                val assistantMsg = ChatMessageEntity(
+                    id = UUID.randomUUID().toString(),
+                    conversationId = conversationId,
+                    role = "ASSISTANT",
+                    text = replyText,
+                    timestamp = System.currentTimeMillis()
+                )
+                chatMessageDao.insertMessage(assistantMsg)
+                return@withContext Result.success(replyText)
+            }
+        }
 
         // 2. Build Mode-Scoped Context
         val context = buildModeScopedContext(userText, mode)
@@ -91,6 +216,93 @@ class AssistantRepository(
             chatMessageDao.insertMessage(assistantMsg)
             Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
         }
+    }
+
+    private fun parseItemLocally(userText: String, locations: List<com.example.data.local.entities.LocationEntity>): SingleItemScanResult {
+        var raw = userText.trim()
+        val stripPrefixes = listOf(
+            "add a ", "add an ", "add the ", "add my ", "add ",
+            "added a ", "added an ", "added the ", "added my ", "added ",
+            "bought a ", "bought an ", "bought the ", "bought ",
+            "put a ", "put an ", "put the ", "put my ", "put ",
+            "new item: ", "new item ", "record ", "store "
+        )
+        for (prefix in stripPrefixes) {
+            if (raw.startsWith(prefix, ignoreCase = true)) {
+                raw = raw.substring(prefix.length).trim()
+                break
+            }
+        }
+
+        var cleanName = raw
+        locations.forEach { loc ->
+            val locSuffixes = listOf(
+                " in the ${loc.name}", " in ${loc.name}",
+                " into the ${loc.name}", " into ${loc.name}",
+                " to the ${loc.name}", " to ${loc.name}",
+                " on the ${loc.name}", " on ${loc.name}",
+                " at the ${loc.name}", " at ${loc.name}"
+            )
+            locSuffixes.forEach { suffix ->
+                if (cleanName.endsWith(suffix, ignoreCase = true)) {
+                    cleanName = cleanName.substring(0, cleanName.length - suffix.length).trim()
+                }
+            }
+        }
+
+        if (cleanName.isBlank()) cleanName = raw.take(40).ifBlank { "Household Item" }
+
+        val lower = cleanName.lowercase()
+        val category = when {
+            lower.contains("drill") || lower.contains("saw") || lower.contains("hammer") ||
+                    lower.contains("wrench") || lower.contains("screwdriver") || lower.contains("socket") ||
+                    lower.contains("tool") || lower.contains("plier") || lower.contains("clamp") -> "Tools"
+
+            lower.contains("battery") || lower.contains("screw") || lower.contains("bolt") ||
+                    lower.contains("nail") || lower.contains("washer") || lower.contains("hardware") -> "Hardware"
+
+            lower.contains("pan") || lower.contains("pot") || lower.contains("blender") ||
+                    lower.contains("knife") || lower.contains("coffee") || lower.contains("plate") ||
+                    lower.contains("rice") || lower.contains("food") || lower.contains("spice") -> "Kitchen"
+
+            lower.contains("tv") || lower.contains("laptop") || lower.contains("monitor") ||
+                    lower.contains("speaker") || lower.contains("phone") || lower.contains("charger") ||
+                    lower.contains("camera") || lower.contains("printer") -> "Electronics"
+
+            lower.contains("box") || lower.contains("bin") || lower.contains("tote") ||
+                    lower.contains("shelf") || lower.contains("container") -> "Storage"
+
+            else -> "General"
+        }
+
+        var quantity = 1
+        val qtyRegex = Regex("""\b(\d+)\s+([a-zA-Z].*)""")
+        val match = qtyRegex.matchEntire(cleanName)
+        if (match != null) {
+            val num = match.groupValues[1].toIntOrNull()
+            if (num != null && num in 1..9999) {
+                quantity = num
+            }
+        }
+
+        return SingleItemScanResult(
+            name = cleanName.replaceFirstChar { it.uppercase() },
+            brand = null,
+            manufacturer = null,
+            model = null,
+            modelNumber = null,
+            serialNumber = null,
+            barcode = null,
+            category = category,
+            subcategory = null,
+            quantity = quantity,
+            condition = "Good",
+            description = userText,
+            visibleText = emptyList<String>(),
+            accessories = emptyList<String>(),
+            confidence = 0.95f,
+            aiSummary = "Added via Home AI assistant conversation"
+        )
     }
 
     private suspend fun buildModeScopedContext(userText: String, mode: com.example.ai.modes.AssistantMode): String = withContext(Dispatchers.IO) {
@@ -165,7 +377,11 @@ class AssistantRepository(
     }
 
     suspend fun clearHistory(mode: com.example.ai.modes.AssistantMode) = withContext(Dispatchers.IO) {
-        chatMessageDao.clearMessages(mode.id)
+        if (mode == com.example.ai.modes.AssistantMode.HOME_AI) {
+            chatMessageDao.clearAllMessages()
+        } else {
+            chatMessageDao.clearMessages(mode.id)
+        }
     }
 }
 
@@ -247,15 +463,15 @@ class BackupRepository(
                                     id = obj.getString("id"),
                                     name = obj.getString("name"),
                                     normalizedName = obj.getString("name").lowercase(),
-                                    brand = obj.optString("brand", null),
-                                    model = obj.optString("model", null),
-                                    modelNumber = obj.optString("modelNumber", null),
-                                    serialNumber = obj.optString("serialNumber", null),
+                                    brand = if (obj.has("brand")) obj.optString("brand") else null,
+                                    model = if (obj.has("model")) obj.optString("model") else null,
+                                    modelNumber = if (obj.has("modelNumber")) obj.optString("modelNumber") else null,
+                                    serialNumber = if (obj.has("serialNumber")) obj.optString("serialNumber") else null,
                                     category = obj.optString("category", "General"),
-                                    currentLocationId = obj.optString("currentLocationId", null),
-                                    description = obj.optString("description", null),
-                                    notes = obj.optString("notes", null),
-                                    aiSummary = obj.optString("aiSummary", null),
+                                    currentLocationId = if (obj.has("currentLocationId")) obj.optString("currentLocationId") else null,
+                                    description = if (obj.has("description")) obj.optString("description") else null,
+                                    notes = if (obj.has("notes")) obj.optString("notes") else null,
+                                    aiSummary = if (obj.has("aiSummary")) obj.optString("aiSummary") else null,
                                     lastScannedAt = obj.optLong("lastScannedAt", System.currentTimeMillis())
                                 )
                                 database.itemDao().insertItem(item)

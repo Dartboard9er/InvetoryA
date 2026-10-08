@@ -63,11 +63,6 @@ fun AssistantScreen(
         val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (!spoken.isNullOrEmpty()) {
             inputText = spoken
-            // Auto detect mode
-            val detected = AssistantMode.detectModeFromQuery(spoken)
-            if (detected != selectedMode && selectedMode == AssistantMode.HOME_AI) {
-                selectedMode = detected
-            }
             isInConversation = true
             coroutineScope.launch {
                 isThinking = true
@@ -377,13 +372,6 @@ fun AssistantScreen(
                             val q = inputText.trim()
                             if (q.isNotEmpty()) {
                                 inputText = ""
-                                // Check auto mode detect if in generic HOME_AI mode
-                                if (selectedMode == AssistantMode.HOME_AI) {
-                                    val detected = AssistantMode.detectModeFromQuery(q)
-                                    if (detected != AssistantMode.HOME_AI) {
-                                        selectedMode = detected
-                                    }
-                                }
                                 isInConversation = true
                                 coroutineScope.launch {
                                     isThinking = true

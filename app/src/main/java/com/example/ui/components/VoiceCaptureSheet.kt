@@ -672,11 +672,57 @@ fun VoiceCaptureSheet(
                                     Button(
                                         onClick = {
                                             coroutineScope.launch {
+                                                // If this is a new item, create and save the item in inventory
+                                                var createdItemId: String? = null
+                                                if (interp.type == InterpretedIntentType.NEW_ITEM) {
+                                                    val targetLoc = interp.targetLocation ?: allLocations.firstOrNull()
+                                                    val targetFile = File.createTempFile("voice_item_", ".jpg", context.cacheDir)
+                                                    SampleScanGenerator.generateSampleImageFile(targetFile, (0..5).random())
+
+                                                    var itemName = interp.summary.take(40).trim()
+                                                    val stripWords = listOf("i bought a ", "i bought an ", "bought a ", "bought an ", "bought ", "added a ", "added an ", "added ")
+                                                    for (w in stripWords) {
+                                                        if (itemName.startsWith(w, ignoreCase = true)) {
+                                                            itemName = itemName.substring(w.length).trim()
+                                                            break
+                                                        }
+                                                    }
+                                                    if (itemName.isBlank() || itemName == "New Item Recorded") {
+                                                        itemName = "Household Item"
+                                                    }
+
+                                                    val parsed = interp.parsedItemResult ?: SingleItemScanResult(
+                                                        name = itemName.replaceFirstChar { it.uppercase() },
+                                                        brand = null,
+                                                        manufacturer = null,
+                                                        model = null,
+                                                        modelNumber = null,
+                                                        serialNumber = null,
+                                                        barcode = null,
+                                                        category = "General",
+                                                        subcategory = null,
+                                                        quantity = 1,
+                                                        condition = "Good",
+                                                        description = interp.rawTranscript,
+                                                        visibleText = emptyList(),
+                                                        accessories = emptyList(),
+                                                        confidence = 0.9f,
+                                                        aiSummary = "Added via voice memory clip"
+                                                    )
+                                                    val savedItem = inventoryRepository.saveNewItemFromScan(
+                                                        scanResult = parsed,
+                                                        imageFile = targetFile,
+                                                        locationId = targetLoc?.id
+                                                    )
+                                                    createdItemId = savedItem.id
+                                                    actionSavedMessage = "✅ Added '${savedItem.name}' to your inventory at ${targetLoc?.name ?: "Home"}!"
+                                                }
+
                                                 // Save to AI Memory table
                                                 val memory = AiMemoryEntity(
                                                     id = UUID.randomUUID().toString(),
                                                     type = interp.type.name,
-                                                    itemId = interp.targetItem?.id,
+                                                    itemId = createdItemId ?: interp.targetItem?.id,
                                                     locationId = interp.targetLocation?.id,
                                                     content = interp.summary,
                                                     importance = 0.8f,
@@ -692,9 +738,10 @@ fun VoiceCaptureSheet(
                                                             notes = if (interp.targetItem.notes.isNullOrEmpty()) interp.summary else "${interp.targetItem.notes}\n${interp.summary}"
                                                         )
                                                     )
+                                                    actionSavedMessage = "✅ Moved '${interp.targetItem.name}' to ${interp.targetLocation.name}!"
+                                                } else if (actionSavedMessage == null) {
+                                                    actionSavedMessage = "Saved to Home AI Brain! Your household memory has been permanently recorded."
                                                 }
-
-                                                actionSavedMessage = "Saved to Home AI Brain! Your household memory has been permanently recorded."
                                             }
                                         },
                                         modifier = Modifier
@@ -704,7 +751,7 @@ fun VoiceCaptureSheet(
                                     ) {
                                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Save Memory Clip", fontWeight = FontWeight.Bold)
+                                        Text("Save Memory to Inventory", fontWeight = FontWeight.Bold)
                                     }
                                 } else {
                                     Surface(

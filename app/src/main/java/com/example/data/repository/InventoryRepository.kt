@@ -67,7 +67,7 @@ class InventoryRepository(
         // 1. Save image permanently to item folder
         val targetImg = File(fileManager.getItemImagesDir(itemId), "photo_primary.jpg")
         imageFile.copyTo(targetImg, overwrite = true)
-        val thumbPath = fileManager.saveImageForItem(itemId, android.graphics.BitmapFactory.decodeFile(targetImg.absolutePath)).second
+        val thumbPath = fileManager.createThumbnailForFile(itemId, targetImg)
 
         val primaryImage = ItemImageEntity(
             id = UUID.randomUUID().toString(),

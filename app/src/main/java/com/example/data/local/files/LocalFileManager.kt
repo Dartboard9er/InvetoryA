@@ -49,6 +49,35 @@ class LocalFileManager(private val context: Context) {
         targetFile.absolutePath
     }
 
+    suspend fun createThumbnailForFile(itemId: String, sourceFile: File): String? = withContext(Dispatchers.IO) {
+        try {
+            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(sourceFile.absolutePath, boundsOptions)
+            val origW = boundsOptions.outWidth
+            val origH = boundsOptions.outHeight
+            if (origW <= 0 || origH <= 0) return@withContext null
+
+            val thumbWidth = 240
+            var sampleSize = 1
+            while (origW / (sampleSize * 2) >= thumbWidth) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val decoded = BitmapFactory.decodeFile(sourceFile.absolutePath, decodeOptions) ?: return@withContext null
+            val thumbHeight = (decoded.height * (thumbWidth.toFloat() / decoded.width)).toInt().coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(decoded, thumbWidth, thumbHeight, true)
+
+            val fileId = UUID.randomUUID().toString()
+            val thumbFile = File(getItemThumbnailsDir(itemId), "thumb_${fileId}.jpg")
+            saveBitmap(scaled, thumbFile, quality = 75)
+            thumbFile.absolutePath
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     suspend fun saveImageForItem(itemId: String, bitmap: Bitmap, isPrimary: Boolean = false): Pair<String, String?> = withContext(Dispatchers.IO) {
         val fileId = UUID.randomUUID().toString()
         val imageFile = File(getItemImagesDir(itemId), "img_${fileId}.jpg")

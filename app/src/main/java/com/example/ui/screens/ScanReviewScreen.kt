@@ -59,6 +59,13 @@ fun ScanReviewScreen(
 
     // Run analysis on launch
     LaunchedEffect(Unit) {
+        if (!imageFile.exists() || imageFile.length() == 0L) {
+            try {
+                com.example.util.SampleScanGenerator.generateSampleImageFile(imageFile, 0)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         val apiKey = geminiService.getApiKey()
         if (apiKey.isEmpty()) {
             isAnalyzing = false

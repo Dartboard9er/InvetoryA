@@ -65,6 +65,7 @@ fun CameraViewfinder(
 
                             val capture = ImageCapture.Builder()
                                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                .setTargetResolution(android.util.Size(1920, 1080))
                                 .build()
                             imageCapture = capture
 
@@ -237,6 +238,7 @@ fun CameraViewfinder(
                         .testTag("camera_shutter_button")
                         .clickable {
                             val capture = imageCapture
+                            val mainExecutor = ContextCompat.getMainExecutor(context)
                             if (capture != null && !cameraInitFailed) {
                                 val outputDir = context.cacheDir
                                 val photoFile = File.createTempFile("scan_", ".jpg", outputDir)
@@ -244,25 +246,41 @@ fun CameraViewfinder(
 
                                 capture.takePicture(
                                     outputOptions,
-                                    cameraExecutor,
+                                    mainExecutor,
                                     object : ImageCapture.OnImageSavedCallback {
                                         override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                                            onImageCaptured(photoFile)
+                                            mainExecutor.execute {
+                                                try {
+                                                    onImageCaptured(photoFile)
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                }
+                                            }
                                         }
 
                                         override fun onError(exception: ImageCaptureException) {
-                                            // Fallback on error
-                                            val fallbackFile = File.createTempFile("scan_sample_", ".jpg", context.cacheDir)
-                                            SampleScanGenerator.generateSampleImageFile(fallbackFile, selectedSampleIndex)
-                                            onImageCaptured(fallbackFile)
+                                            mainExecutor.execute {
+                                                try {
+                                                    val fallbackFile = File.createTempFile("scan_sample_", ".jpg", context.cacheDir)
+                                                    SampleScanGenerator.generateSampleImageFile(fallbackFile, selectedSampleIndex)
+                                                    onImageCaptured(fallbackFile)
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                }
+                                            }
                                         }
                                     }
                                 )
                             } else {
-                                // Camera not available in preview environment - generate high fidelity sample photo immediately
-                                val photoFile = File.createTempFile("scan_sample_", ".jpg", context.cacheDir)
-                                SampleScanGenerator.generateSampleImageFile(photoFile, selectedSampleIndex)
-                                onImageCaptured(photoFile)
+                                mainExecutor.execute {
+                                    try {
+                                        val photoFile = File.createTempFile("scan_sample_", ".jpg", context.cacheDir)
+                                        SampleScanGenerator.generateSampleImageFile(photoFile, selectedSampleIndex)
+                                        onImageCaptured(photoFile)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
                             }
                         },
                     contentAlignment = Alignment.Center
