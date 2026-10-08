@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- House outline -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 L28,48 L35,48 L35,76 L50,76 L50,62 L58,62 L58,76 L73,76 L73,48 L80,48 Z" />
+    <!-- AI Optical Lens / Memory Aperture in center of house -->
+    <path
+        android:fillColor="#14B8A6"
+        android:pathData="M54,42 A8,8 0 1,0 54,58 A8,8 0 1,0 54,42 Z" />
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M54,46 A4,4 0 1,0 54,54 A4,4 0 1,0 54,46 Z" />
+    <!-- Radiating vision arc -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M42,34 A18,18 0 0,1 66,34" />
+</vector>

@@ -1,0 +1,6 @@
+{
+  "name": "Home AI",
+  "description": "Native Android AI household inventory and visual memory assistant. Your home, remembered.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
