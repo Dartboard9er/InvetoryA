@@ -30,17 +30,11 @@ jobs:
             touch .env
           fi
 
-      - name: Restore debug keystore if present as base64
-        run: |
-          if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-          fi
-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
       - name: Build Debug APK with Gradle
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       - name: Verify and Prepare APK Artifact
         run: |

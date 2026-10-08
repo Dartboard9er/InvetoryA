@@ -27,15 +27,6 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
-      val customKeystore = file("${rootDir}/debug.keystore")
-      if (customKeystore.exists()) {
-        storeFile = customKeystore
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
-      }
-    }
   }
 
   buildTypes {
@@ -45,7 +36,9 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      // Uses the standard Android SDK automatic debug signing keystore
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
