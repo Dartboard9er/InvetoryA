@@ -48,7 +48,7 @@ class SpeechManager(private val context: Context) {
                 speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
                 _isOnDevice.value = false
             } else {
-                _errorMessage.value = "Voice transcription isn't available right now."
+                _errorMessage.value = "Voice recognition service is not available on this device."
                 return
             }
 
@@ -118,6 +118,8 @@ class SpeechManager(private val context: Context) {
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+                // Prefer offline recognition if available
+                putExtra("android.speech.extra.PREFER_OFFLINE", true)
             }
 
             speechRecognizer?.startListening(intent)

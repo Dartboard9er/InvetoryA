@@ -34,6 +34,9 @@ import com.example.ai.gemini.SingleItemScanResult
 import com.example.data.local.entities.ItemEntity
 import com.example.data.local.entities.LocationEntity
 import com.example.data.repository.InventoryRepository
+import com.example.ui.components.NetworkStatusBadge
+import com.example.ui.components.VoiceFieldDictationDialog
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -48,6 +51,9 @@ fun ScanReviewScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val networkMonitor = remember { NetworkMonitor(context) }
+    val isOnline by networkMonitor.isOnlineFlow.collectAsStateWithLifecycle(initialValue = networkMonitor.isCurrentlyOnline())
+
     val locations by inventoryRepository.allLocations.collectAsStateWithLifecycle(initialValue = emptyList())
 
     var activeImageFile by remember(imageFile) { mutableStateOf(imageFile) }
@@ -56,6 +62,9 @@ fun ScanReviewScreen(
     var scanResult by remember { mutableStateOf<SingleItemScanResult?>(null) }
     var duplicateMatches by remember { mutableStateOf<List<ItemEntity>>(emptyList()) }
     var selectedLocationId by remember { mutableStateOf<String?>("loc_workbench") }
+
+    // Voice dictation field trigger
+    var showVoiceDictationForField by remember { mutableStateOf<String?>(null) }
 
     // Editable fields
     var nameText by remember { mutableStateOf("") }
@@ -154,6 +163,13 @@ fun ScanReviewScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    NetworkStatusBadge(
+                        isOnline = isOnline,
+                        hasApiKey = !isKeyMissing,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
                 }
             )
         }
@@ -475,7 +491,15 @@ fun ScanReviewScreen(
                 value = nameText,
                 onValueChange = { nameText = it },
                 label = { Text("Item Name") },
-                modifier = Modifier.fillMaxWidth().testTag("item_name_input")
+                modifier = Modifier.fillMaxWidth().testTag("item_name_input"),
+                trailingIcon = {
+                    IconButton(
+                        onClick = { showVoiceDictationForField = "name" },
+                        modifier = Modifier.testTag("scan_dictate_name_button")
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = "Dictate Name", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
             )
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -561,7 +585,15 @@ fun ScanReviewScreen(
                 label = { Text("Description & Notes") },
                 placeholder = { Text("Visual details, color, features, accessories...") },
                 modifier = Modifier.fillMaxWidth().testTag("item_notes_input"),
-                maxLines = 3
+                maxLines = 3,
+                trailingIcon = {
+                    IconButton(
+                        onClick = { showVoiceDictationForField = "notes" },
+                        modifier = Modifier.testTag("scan_dictate_notes_button")
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = "Dictate Notes", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
             )
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -633,6 +665,22 @@ fun ScanReviewScreen(
                 Text("Confirm & Save Item", fontWeight = FontWeight.Bold)
             }
         }
+    }
+
+    if (showVoiceDictationForField != null) {
+        val field = showVoiceDictationForField!!
+        VoiceFieldDictationDialog(
+            fieldName = if (field == "name") "Item Name" else "Description & Notes",
+            onTranscriptionReceived = { text ->
+                if (field == "name") {
+                    nameText = text
+                } else {
+                    notesText = if (notesText.isBlank()) text else "$notesText $text"
+                }
+                showVoiceDictationForField = null
+            },
+            onDismiss = { showVoiceDictationForField = null }
+        )
     }
 }
 

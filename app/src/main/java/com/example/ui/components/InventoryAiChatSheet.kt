@@ -29,6 +29,7 @@ import com.example.ai.gemini.SingleItemScanResult
 import com.example.data.local.entities.ItemEntity
 import com.example.data.repository.InventoryRepository
 import com.example.util.SampleScanGenerator
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -50,7 +51,13 @@ fun InventoryAiChatSheet(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val networkMonitor = remember { NetworkMonitor(context) }
+    val isOnline by networkMonitor.isOnlineFlow.collectAsStateWithLifecycle(initialValue = networkMonitor.isCurrentlyOnline())
+    val hasApiKey = remember(geminiService) { geminiService.getApiKey().isNotBlank() }
+
     val locations by inventoryRepository.allLocations.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    var showVoiceDictationDialog by remember { mutableStateOf(false) }
 
     var messages by remember {
         mutableStateOf(
@@ -152,8 +159,15 @@ fun InventoryAiChatSheet(
                     }
                 }
 
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NetworkStatusBadge(
+                        isOnline = isOnline,
+                        hasApiKey = hasApiKey,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
                 }
             }
 
@@ -319,6 +333,16 @@ fun InventoryAiChatSheet(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
+                    IconButton(
+                        onClick = { showVoiceDictationDialog = true },
+                        modifier = Modifier.testTag("chat_voice_dictate_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Voice Dictate",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Spacer(modifier = Modifier.width(4.dp))
                     OutlinedTextField(
                         value = inputText,
@@ -407,5 +431,16 @@ fun InventoryAiChatSheet(
                 }
             }
         }
+    }
+
+    if (showVoiceDictationDialog) {
+        VoiceFieldDictationDialog(
+            fieldName = "Item Description",
+            onTranscriptionReceived = { text ->
+                inputText = if (inputText.isBlank()) text else "$inputText $text"
+                showVoiceDictationDialog = false
+            },
+            onDismiss = { showVoiceDictationDialog = false }
+        )
     }
 }

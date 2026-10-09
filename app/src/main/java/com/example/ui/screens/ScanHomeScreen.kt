@@ -35,6 +35,9 @@ import coil.compose.AsyncImage
 import com.example.data.local.entities.ItemEntity
 import com.example.data.repository.InventoryRepository
 import com.example.ui.components.CameraViewfinder
+import com.example.ui.components.NetworkStatusBadge
+import com.example.ui.components.AddItemOfflineDialog
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -48,6 +51,10 @@ fun ScanHomeScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val networkMonitor = remember { NetworkMonitor(context) }
+    val isOnline by networkMonitor.isOnlineFlow.collectAsStateWithLifecycle(initialValue = networkMonitor.isCurrentlyOnline())
+
+    var showDirectAddOfflineDialog by remember { mutableStateOf(false) }
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -166,7 +173,30 @@ fun ScanHomeScreen(
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Network Status Badge (Online vs Offline)
+                    NetworkStatusBadge(
+                        isOnline = isOnline,
+                        hasApiKey = true
+                    )
+
+                    // Direct Add Item Offline
+                    IconButton(
+                        onClick = { showDirectAddOfflineDialog = true },
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.15f), CircleShape)
+                            .testTag("scan_header_add_offline_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Item Directly",
+                            tint = Color.White
+                        )
+                    }
+
                     // Import Photo Action
                     IconButton(
                         onClick = {
@@ -237,14 +267,21 @@ fun ScanHomeScreen(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(bottom = 120.dp)
+                    .padding(bottom = 148.dp)
             ) {
-                Text(
-                    text = "Recently Scanned",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(start = 20.dp, bottom = 8.dp)
-                )
+                Surface(
+                    color = Color.Black.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Text(
+                        text = "Recently Scanned (${recentItems.size.coerceAtMost(8)})",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                    )
+                }
 
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -258,6 +295,17 @@ fun ScanHomeScreen(
                     }
                 }
             }
+        }
+
+        if (showDirectAddOfflineDialog) {
+            AddItemOfflineDialog(
+                inventoryRepository = inventoryRepository,
+                onDismiss = { showDirectAddOfflineDialog = false },
+                onItemAdded = { newItemId ->
+                    showDirectAddOfflineDialog = false
+                    onNavigateToItemDetail(newItemId)
+                }
+            )
         }
     }
 }

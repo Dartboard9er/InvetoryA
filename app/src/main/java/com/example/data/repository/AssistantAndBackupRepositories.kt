@@ -205,16 +205,21 @@ class AssistantRepository(
             chatMessageDao.insertMessage(assistantMsg)
             Result.success(reply)
         } else {
-            val errorText = "AI could not process your question: ${result.exceptionOrNull()?.message ?: "Check your connection"}"
+            val localSummary = if (context.contains("Directly matching inventory:") || context.contains("Kitchen items:") || context.contains("Garage tools:")) {
+                "\n\nHere are matching records found in your offline local inventory:\n" + context.trim()
+            } else {
+                "\n\n(Checked your local inventory for '$userText' — no direct matches found)."
+            }
+            val fallbackNotice = "📡 Offline / Network unavailable. Switched to Local Mode.$localSummary"
             val assistantMsg = ChatMessageEntity(
                 id = UUID.randomUUID().toString(),
                 conversationId = conversationId,
                 role = "ASSISTANT",
-                text = errorText,
+                text = fallbackNotice,
                 timestamp = System.currentTimeMillis()
             )
             chatMessageDao.insertMessage(assistantMsg)
-            Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+            Result.success(fallbackNotice)
         }
     }
 

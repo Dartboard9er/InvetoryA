@@ -34,6 +34,9 @@ import com.example.ai.gemini.GeminiService
 import com.example.data.local.entities.ItemEntity
 import com.example.data.local.files.LocalFileManager
 import com.example.data.repository.InventoryRepository
+import com.example.ui.components.NetworkStatusBadge
+import com.example.ui.components.VoiceFieldDictationDialog
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -51,6 +54,10 @@ fun ItemDetailScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val networkMonitor = remember { NetworkMonitor(context) }
+    val isOnline by networkMonitor.isOnlineFlow.collectAsStateWithLifecycle(initialValue = networkMonitor.isCurrentlyOnline())
+    val hasApiKey = remember(geminiService) { geminiService.getApiKey().isNotBlank() }
+
     val item by inventoryRepository.observeItem(itemId).collectAsStateWithLifecycle(initialValue = null)
     val images by inventoryRepository.observeImages(itemId).collectAsStateWithLifecycle(initialValue = emptyList())
     val observations by inventoryRepository.observeObservations(itemId).collectAsStateWithLifecycle(initialValue = emptyList())
@@ -63,6 +70,7 @@ fun ItemDetailScreen(
     val maintenanceTasks by inventoryRepository.observeTasksForItem(itemId).collectAsStateWithLifecycle(initialValue = emptyList())
 
     var locationPath by remember { mutableStateOf("Unassigned") }
+    var showEditDialog by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showAddFieldDialog by remember { mutableStateOf(false) }
@@ -71,6 +79,7 @@ fun ItemDetailScreen(
     var isResearching by remember { mutableStateOf(false) }
     var researchError by remember { mutableStateOf<String?>(null) }
     var latestResearchResult by remember { mutableStateOf<com.example.ai.gemini.ItemResearchResult?>(null) }
+    var voiceFieldTarget by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(item?.currentLocationId) {
         locationPath = inventoryRepository.getLocationPath(item?.currentLocationId)
@@ -132,6 +141,14 @@ fun ItemDetailScreen(
                     }
                 },
                 actions = {
+                    NetworkStatusBadge(
+                        isOnline = isOnline,
+                        hasApiKey = hasApiKey,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                    IconButton(onClick = { showEditDialog = true }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Item Details")
+                    }
                     IconButton(onClick = { showMoveDialog = true }) {
                         Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move")
                     }
@@ -847,6 +864,172 @@ fun ItemDetailScreen(
                 }
             }
         )
+    }
+
+    // Edit Item Details Dialog (Offline-First with Voice Dictation)
+    if (showEditDialog) {
+        var editName by remember(itm) { mutableStateOf(itm.name) }
+        var editBrand by remember(itm) { mutableStateOf(itm.brand ?: "") }
+        var editModel by remember(itm) { mutableStateOf(itm.model ?: "") }
+        var editSerial by remember(itm) { mutableStateOf(itm.serialNumber ?: "") }
+        var editCategory by remember(itm) { mutableStateOf(itm.category) }
+        var editCondition by remember(itm) { mutableStateOf(itm.condition ?: "Good") }
+        var editQuantity by remember(itm) { mutableStateOf(itm.quantity.toString()) }
+        var editPrice by remember(itm) { mutableStateOf(if (itm.purchasePrice != null && itm.purchasePrice!! > 0) String.format(Locale.US, "%.2f", itm.purchasePrice!!) else "") }
+        var editNotes by remember(itm) { mutableStateOf(itm.notes ?: "") }
+
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Edit Item Details", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Item Name *") },
+                        modifier = Modifier.fillMaxWidth().testTag("edit_item_name_input"),
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { voiceFieldTarget = "name" }) {
+                                Icon(Icons.Default.Mic, contentDescription = "Dictate Name", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = editBrand,
+                            onValueChange = { editBrand = it },
+                            label = { Text("Brand") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = editModel,
+                            onValueChange = { editModel = it },
+                            label = { Text("Model") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = editSerial,
+                            onValueChange = { editSerial = it },
+                            label = { Text("Serial / Part #") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = editQuantity,
+                            onValueChange = { editQuantity = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Qty") },
+                            modifier = Modifier.weight(0.5f),
+                            singleLine = true
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = editCategory,
+                            onValueChange = { editCategory = it },
+                            label = { Text("Category") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = editCondition,
+                            onValueChange = { editCondition = it },
+                            label = { Text("Condition") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = editPrice,
+                        onValueChange = { editPrice = it },
+                        label = { Text("Estimated Value ($)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = editNotes,
+                        onValueChange = { editNotes = it },
+                        label = { Text("Notes & Details") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        maxLines = 4,
+                        trailingIcon = {
+                            IconButton(onClick = { voiceFieldTarget = "notes" }) {
+                                Icon(Icons.Default.Mic, contentDescription = "Dictate Notes", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsedQty = editQuantity.toIntOrNull() ?: 1
+                        val parsedPrice = editPrice.toDoubleOrNull()
+                        val updated = itm.copy(
+                            name = editName.ifBlank { itm.name },
+                            brand = editBrand.ifBlank { null },
+                            model = editModel.ifBlank { null },
+                            serialNumber = editSerial.ifBlank { null },
+                            category = editCategory.ifBlank { "General" },
+                            condition = editCondition.ifBlank { "Good" },
+                            quantity = parsedQty,
+                            purchasePrice = parsedPrice,
+                            notes = editNotes.ifBlank { null },
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        coroutineScope.launch {
+                            inventoryRepository.updateItem(updated)
+                            showEditDialog = false
+                            Toast.makeText(context, "Item updated successfully", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.testTag("save_edit_item_button")
+                ) {
+                    Text("Save Changes")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+
+        voiceFieldTarget?.let { field ->
+            VoiceFieldDictationDialog(
+                fieldName = if (field == "name") "Item Name" else "Item Notes",
+                onTranscriptionReceived = { transcribedText ->
+                    if (field == "name") {
+                        editName = transcribedText
+                    } else {
+                        editNotes = if (editNotes.isBlank()) transcribedText else "$editNotes $transcribedText"
+                    }
+                    voiceFieldTarget = null
+                },
+                onDismiss = { voiceFieldTarget = null }
+            )
+        }
     }
 }
 

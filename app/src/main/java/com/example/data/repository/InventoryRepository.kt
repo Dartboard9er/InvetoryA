@@ -39,6 +39,7 @@ class InventoryRepository(
     val allMaintenanceTasks: Flow<List<MaintenanceTaskEntity>> = maintenanceDao.getAllTasks()
     val overdueTasks: Flow<List<MaintenanceTaskEntity>> = maintenanceDao.getOverdueTasks()
     val upcomingTasks: Flow<List<MaintenanceTaskEntity>> = maintenanceDao.getUpcomingTasks()
+    val allReadyProfiles: Flow<List<ItemIntelligenceProfileEntity>> = profileDao.getAllReadyProfiles()
 
     fun observeItem(id: String): Flow<ItemEntity?> = itemDao.observeItemById(id)
     fun observeProfile(itemId: String): Flow<ItemIntelligenceProfileEntity?> = profileDao.observeProfile(itemId)
@@ -397,6 +398,18 @@ class InventoryRepository(
             depth++
         }
         if (parts.isEmpty()) "Unassigned" else parts.joinToString(" / ")
+    }
+
+    suspend fun addLocation(name: String, type: String = "ROOM", parentLocationId: String? = null): LocationEntity = withContext(Dispatchers.IO) {
+        val newLoc = LocationEntity(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            type = type,
+            parentLocationId = parentLocationId,
+            createdAt = System.currentTimeMillis()
+        )
+        locationDao.insertLocation(newLoc)
+        newLoc
     }
 
     suspend fun buildAssistantContext(userPrompt: String): String = withContext(Dispatchers.IO) {

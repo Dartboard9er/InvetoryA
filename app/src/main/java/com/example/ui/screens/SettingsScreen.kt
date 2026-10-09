@@ -19,6 +19,9 @@ import com.example.ai.gemini.AIConfiguration
 import com.example.ai.gemini.GeminiService
 import com.example.data.local.files.LocalFileManager
 import com.example.data.repository.BackupRepository
+import com.example.ui.components.NetworkStatusBadge
+import com.example.util.NetworkMonitor
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.DecimalFormat
@@ -32,6 +35,9 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val networkMonitor = remember { NetworkMonitor(context) }
+    val isOnline by networkMonitor.isOnlineFlow.collectAsStateWithLifecycle(initialValue = networkMonitor.isCurrentlyOnline())
+    val hasApiKey = remember(geminiService) { geminiService.getApiKey().isNotBlank() }
 
     var apiKeyText by remember { mutableStateOf(geminiService.getApiKey()) }
     var isTestingKey by remember { mutableStateOf(false) }
@@ -55,7 +61,14 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings & Privacy", fontWeight = FontWeight.Bold) }
+                title = { Text("Settings & Privacy", fontWeight = FontWeight.Bold) },
+                actions = {
+                    NetworkStatusBadge(
+                        isOnline = isOnline,
+                        hasApiKey = hasApiKey,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
             )
         }
     ) { padding ->

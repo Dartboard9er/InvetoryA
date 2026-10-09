@@ -38,6 +38,9 @@ import com.example.ai.modes.AssistantMode
 import com.example.data.local.entities.ChatMessageEntity
 import com.example.data.repository.AssistantRepository
 import com.example.data.repository.InventoryRepository
+import com.example.ui.components.NetworkStatusBadge
+import com.example.ui.components.OfflineNoticeBanner
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -52,6 +55,10 @@ fun AssistantScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val networkMonitor = remember { NetworkMonitor(context) }
+    val isOnline by networkMonitor.isOnlineFlow.collectAsStateWithLifecycle(initialValue = networkMonitor.isCurrentlyOnline())
+    val hasApiKey = remember(geminiService) { geminiService?.getApiKey()?.isNotBlank() == true }
+
     var selectedMode by remember { mutableStateOf(AssistantMode.HOME_AI) }
     var isInConversation by remember { mutableStateOf(false) }
     var showModeSheet by remember { mutableStateOf(false) }
@@ -199,6 +206,11 @@ fun AssistantScreen(
                     }
                 },
                 actions = {
+                    NetworkStatusBadge(
+                        isOnline = isOnline,
+                        hasApiKey = hasApiKey,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
                     IconButton(onClick = {
                         coroutineScope.launch { assistantRepository.clearHistory(selectedMode) }
                     }) {
@@ -213,6 +225,10 @@ fun AssistantScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            OfflineNoticeBanner(
+                isOnline = isOnline,
+                hasApiKey = hasApiKey
+            )
             if (!isInConversation && messages.isEmpty()) {
                 // ASSISTANT LANDING SCREEN (Mode Selection & Quick Start)
                 LazyColumn(
@@ -234,6 +250,34 @@ fun AssistantScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                val starterPrompts = listOf(
+                                    "🔎 Find my drill",
+                                    "🍳 What can I cook?",
+                                    "🛠️ What's due?",
+                                    "📖 Equipment manuals",
+                                    "📦 Kitchen stock"
+                                )
+                                items(starterPrompts) { prompt ->
+                                    SuggestionChip(
+                                        onClick = {
+                                            val query = prompt.substring(2).trim()
+                                            isInConversation = true
+                                            coroutineScope.launch {
+                                                isThinking = true
+                                                assistantRepository.sendMessage(query, selectedMode)
+                                                isThinking = false
+                                            }
+                                        },
+                                        label = { Text(prompt, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+                            }
                         }
                     }
 
