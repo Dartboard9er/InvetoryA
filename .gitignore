@@ -28,6 +28,7 @@ local.properties
 # Environment and secrets
 .env
 *.env
+!.env.example
 !*.env.example
 
 # Keystores and signing

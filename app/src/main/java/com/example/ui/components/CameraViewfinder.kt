@@ -65,7 +65,6 @@ fun CameraViewfinder(
 
                             val capture = ImageCapture.Builder()
                                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                                .setTargetResolution(android.util.Size(1920, 1080))
                                 .build()
                             imageCapture = capture
 

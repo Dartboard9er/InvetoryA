@@ -56,6 +56,29 @@ android {
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
+// Automatically ensure GEMINI_API_KEY is never blank to prevent secrets-gradle-plugin syntax errors in BuildConfig
+val rootEnvFile = rootProject.file(".env")
+val rootExampleFile = rootProject.file(".env.example")
+if (!rootEnvFile.exists()) {
+  if (rootExampleFile.exists()) {
+    rootExampleFile.copyTo(rootEnvFile, overwrite = false)
+  } else {
+    rootEnvFile.writeText("GEMINI_API_KEY=MY_GEMINI_API_KEY\n")
+  }
+} else {
+  val envLines = rootEnvFile.readLines()
+  val sanitizedLines = envLines.map { line ->
+    if (line.trim().startsWith("GEMINI_API_KEY=") && line.trim().substringAfter("GEMINI_API_KEY=").trim().isEmpty()) {
+      "GEMINI_API_KEY=MY_GEMINI_API_KEY"
+    } else {
+      line
+    }
+  }
+  if (sanitizedLines != envLines) {
+    rootEnvFile.writeText(sanitizedLines.joinToString("\n") + "\n")
+  }
+}
+
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"

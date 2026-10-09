@@ -28,8 +28,17 @@ jobs:
 
       - name: Ensure .env exists for Secrets Gradle Plugin
         run: |
-          if [ ! -f .env ]; then
-            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+          SECRET_KEY="${{ secrets.GEMINI_API_KEY }}"
+          if [ -n "$SECRET_KEY" ]; then
+            echo "GEMINI_API_KEY=$SECRET_KEY" > .env
+          elif [ -f .env.example ]; then
+            cp .env.example .env
+          else
+            echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env
+          fi
+          # Ensure GEMINI_API_KEY is never an empty string to avoid secrets plugin generating invalid Java
+          if grep -q "^GEMINI_API_KEY=$" .env 2>/dev/null || [ ! -s .env ]; then
+            echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env
           fi
 
       - name: Make Gradle wrapper executable

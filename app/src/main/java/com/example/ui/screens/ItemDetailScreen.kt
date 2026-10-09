@@ -16,7 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -133,7 +133,7 @@ fun ItemDetailScreen(
                 },
                 actions = {
                     IconButton(onClick = { showMoveDialog = true }) {
-                        Icon(Icons.Default.DriveFileMove, contentDescription = "Move")
+                        Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move")
                     }
                     IconButton(onClick = {
                         coroutineScope.launch {
@@ -321,7 +321,7 @@ fun ItemDetailScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Manuals & Forum Intelligence Section
-            SectionHeader(title = "Manuals & Forum Intelligence", icon = Icons.Default.MenuBook)
+            SectionHeader(title = "Manuals & Forum Intelligence", icon = Icons.AutoMirrored.Filled.MenuBook)
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
@@ -347,7 +347,7 @@ fun ItemDetailScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                            Icon(Icons.Default.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
                                                 manualDoc?.name ?: "Official User Manual",
