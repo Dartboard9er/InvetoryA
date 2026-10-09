@@ -1,5 +1,11 @@
 package com.example.ui.screens
 
+import android.content.Context
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,9 +46,11 @@ fun ScanReviewScreen(
     onNavigateBack: () -> Unit,
     onItemSaved: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val locations by inventoryRepository.allLocations.collectAsStateWithLifecycle(initialValue = emptyList())
 
+    var activeImageFile by remember(imageFile) { mutableStateOf(imageFile) }
     var isAnalyzing by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var scanResult by remember { mutableStateOf<SingleItemScanResult?>(null) }
@@ -57,79 +66,84 @@ fun ScanReviewScreen(
     var conditionText by remember { mutableStateOf("Good") }
     var notesText by remember { mutableStateOf("") }
 
-    // Run analysis on launch
-    LaunchedEffect(Unit) {
-        if (!imageFile.exists() || imageFile.length() == 0L) {
-            try {
-                com.example.util.SampleScanGenerator.generateSampleImageFile(imageFile, 0)
-            } catch (e: Exception) {
-                e.printStackTrace()
+    // Inline API key entry state if no key is configured
+    var inlineApiKeyText by remember { mutableStateOf(geminiService.getApiKey()) }
+    var isKeyMissing by remember { mutableStateOf(geminiService.getApiKey().isEmpty()) }
+
+    // Photo picker launcher to let user select any photo from gallery
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let {
+            coroutineScope.launch {
+                try {
+                    val imported = File.createTempFile("scan_import_", ".jpg", context.cacheDir)
+                    context.contentResolver.openInputStream(it)?.use { input ->
+                        imported.outputStream().use { out -> input.copyTo(out) }
+                    }
+                    activeImageFile = imported
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Could not load image: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
-        val apiKey = geminiService.getApiKey()
-        if (apiKey.isEmpty()) {
+    }
+
+    // Reusable analyze function
+    fun performAiAnalysis(targetFile: File = activeImageFile) {
+        coroutineScope.launch {
+            isAnalyzing = true
+            errorMessage = null
+
+            if (!targetFile.exists() || targetFile.length() == 0L) {
+                try {
+                    com.example.util.SampleScanGenerator.generateSampleImageFile(targetFile, 0)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val apiKey = geminiService.getApiKey()
+            if (apiKey.isEmpty()) {
+                isAnalyzing = false
+                isKeyMissing = true
+                errorMessage = "Gemini API key is required for automated item extraction. Enter your key below to auto-identify."
+                if (nameText.isEmpty()) nameText = "Scanned Item"
+                return@launch
+            }
+
+            isKeyMissing = false
+            val result = geminiService.analyzeSingleItem(targetFile)
             isAnalyzing = false
-            nameText = "Scanned Item"
-            scanResult = SingleItemScanResult(
-                name = "Scanned Item",
-                brand = null,
-                manufacturer = null,
-                model = null,
-                modelNumber = null,
-                serialNumber = null,
-                barcode = null,
-                category = "General",
-                subcategory = null,
-                quantity = 1,
-                condition = "Good",
-                description = "Saved locally without AI",
-                visibleText = emptyList(),
-                accessories = emptyList(),
-                confidence = 1.0f,
-                aiSummary = "Saved locally. Add Gemini API key in Settings for AI auto-extraction."
-            )
-            return@LaunchedEffect
-        }
+            if (result.isSuccess) {
+                val res = result.getOrNull()!!
+                scanResult = res
+                nameText = res.name
+                brandText = res.brand ?: ""
+                modelText = if (!res.modelNumber.isNullOrEmpty() && !res.model.isNullOrEmpty() && res.model != res.modelNumber) {
+                    "${res.model} (${res.modelNumber})"
+                } else {
+                    res.model ?: res.modelNumber ?: ""
+                }
+                serialText = res.serialNumber ?: ""
+                categoryText = res.category
+                conditionText = res.condition ?: "Good"
+                notesText = res.description ?: ""
 
-        val result = geminiService.analyzeSingleItem(imageFile)
-        isAnalyzing = false
-        if (result.isSuccess) {
-            val res = result.getOrNull()!!
-            scanResult = res
-            nameText = res.name
-            brandText = res.brand ?: ""
-            modelText = res.model ?: ""
-            serialText = res.serialNumber ?: ""
-            categoryText = res.category
-            conditionText = res.condition ?: "Good"
-
-            // Duplicate detection check against Room
-            coroutineScope.launch {
+                // Duplicate detection check against Room
                 val matches = inventoryRepository.findDuplicateCandidates(res)
                 duplicateMatches = matches
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "AI analysis failed."
+                errorMessage = err
+                if (nameText.isEmpty()) nameText = "Scanned Item"
             }
-        } else {
-            errorMessage = result.exceptionOrNull()?.message ?: "AI analysis failed."
-            nameText = "Scanned Item"
-            scanResult = SingleItemScanResult(
-                name = "Scanned Item",
-                brand = null,
-                manufacturer = null,
-                model = null,
-                modelNumber = null,
-                serialNumber = null,
-                barcode = null,
-                category = "General",
-                subcategory = null,
-                quantity = 1,
-                condition = "Good",
-                description = "Saved locally",
-                visibleText = emptyList(),
-                accessories = emptyList(),
-                confidence = 0.5f,
-                aiSummary = "Photo saved locally. AI analysis can be retried when online."
-            )
         }
+    }
+
+    // Run analysis whenever active image changes
+    LaunchedEffect(activeImageFile) {
+        performAiAnalysis(activeImageFile)
     }
 
     Scaffold(
@@ -154,7 +168,7 @@ fun ScanReviewScreen(
             // Captured Photo Preview with Animated AI Scanner
             if (isAnalyzing) {
                 com.example.ui.components.AiScanningOverlay(
-                    imageFile = imageFile,
+                    imageFile = activeImageFile,
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
@@ -166,15 +180,211 @@ fun ScanReviewScreen(
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     AsyncImage(
-                        model = imageFile,
+                        model = activeImageFile,
                         contentDescription = "Scanned Photo",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
+
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Change Photo", style = MaterialTheme.typography.labelSmall)
+                        }
+
+                        FilledTonalButton(
+                            onClick = { performAiAnalysis(activeImageFile) },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Re-analyze", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Quick Test Items switcher for previewing different items
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Quick Sample Scans:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(com.example.util.SampleScanGenerator.SAMPLE_OBJECTS.size) { idx ->
+                    val sample = com.example.util.SampleScanGenerator.SAMPLE_OBJECTS[idx]
+                    AssistChip(
+                        onClick = {
+                            coroutineScope.launch {
+                                val newSample = File.createTempFile("sample_test_", ".jpg", context.cacheDir)
+                                com.example.util.SampleScanGenerator.generateSampleImageFile(newSample, idx)
+                                activeImageFile = newSample
+                            }
+                        },
+                        label = { Text(sample.brand, style = MaterialTheme.typography.labelSmall) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(14.dp))
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // AI Extraction Highlight Banner when scanResult is present
+            scanResult?.let { res ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("ai_extraction_summary_card")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "✨ AI Extracted Item Info",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "${res.name} • ${res.brand ?: "Brand"} • ${res.model ?: res.category}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Inline API Key entry if key is not configured
+            if (isKeyMissing) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("missing_api_key_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Enter Gemini API Key",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "To have Home AI automatically extract item name, brand, model, serial number, and specifications from your photos, paste your Gemini API key below.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = inlineApiKeyText,
+                            onValueChange = { inlineApiKeyText = it },
+                            placeholder = { Text("AIzaSy...") },
+                            modifier = Modifier.fillMaxWidth().testTag("inline_api_key_input"),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                if (inlineApiKeyText.isNotBlank()) {
+                                    geminiService.saveApiKey(inlineApiKeyText)
+                                    isKeyMissing = false
+                                    errorMessage = null
+                                    performAiAnalysis(activeImageFile)
+                                    Toast.makeText(context, "API Key saved! Analyzing image now...", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("inline_save_key_button"),
+                            enabled = inlineApiKeyText.isNotBlank()
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Save Key & Auto-Identify Item")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            } else if (!errorMessage.isNullOrEmpty()) {
+                // AI Error Message Banner with retry
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "AI Extraction Notice",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = errorMessage ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = { performAiAnalysis(activeImageFile) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("Retry AI Identification")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             // Duplicate Warning banner if matching item found
             if (duplicateMatches.isNotEmpty()) {
@@ -208,7 +418,7 @@ fun ScanReviewScreen(
                                     coroutineScope.launch {
                                         inventoryRepository.updateExistingItemObservation(
                                             itemId = existing.id,
-                                            imageFile = imageFile,
+                                            imageFile = activeImageFile,
                                             locationId = selectedLocationId,
                                             note = "Re-scanned and confirmed"
                                         )
@@ -291,6 +501,42 @@ fun ScanReviewScreen(
                 label = { Text("Serial Number") },
                 modifier = Modifier.fillMaxWidth().testTag("item_serial_input")
             )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Detected text chips from item label or barcode
+            scanResult?.visibleText?.let { texts ->
+                if (texts.isNotEmpty()) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text(
+                            "Detected Text on Item/Label (Tap to apply):",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(texts.size) { idx ->
+                                val txt = texts[idx]
+                                SuggestionChip(
+                                    onClick = {
+                                        if (serialText.isEmpty()) {
+                                            serialText = txt
+                                        } else if (modelText.isEmpty()) {
+                                            modelText = txt
+                                        } else if (brandText.isEmpty()) {
+                                            brandText = txt
+                                        } else {
+                                            notesText = (notesText + " " + txt).trim()
+                                        }
+                                    },
+                                    label = { Text(txt, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -307,6 +553,16 @@ fun ScanReviewScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = notesText,
+                onValueChange = { notesText = it },
+                label = { Text("Description & Notes") },
+                placeholder = { Text("Visual details, color, features, accessories...") },
+                modifier = Modifier.fillMaxWidth().testTag("item_notes_input"),
+                maxLines = 3
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
             // Location Selector
@@ -354,12 +610,13 @@ fun ScanReviewScreen(
                             model = modelText.ifEmpty { null },
                             serialNumber = serialText.ifEmpty { null },
                             category = categoryText,
-                            condition = conditionText
+                            condition = conditionText,
+                            description = notesText.ifEmpty { currentRes.description }
                         )
 
                         val savedItem = inventoryRepository.saveNewItemFromScan(
                             scanResult = finalRes,
-                            imageFile = imageFile,
+                            imageFile = activeImageFile,
                             locationId = selectedLocationId
                         )
                         onItemSaved(savedItem.id)

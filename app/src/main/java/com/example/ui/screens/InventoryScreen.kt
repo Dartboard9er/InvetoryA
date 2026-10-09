@@ -21,6 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.data.local.entities.ItemEntity
 import com.example.data.repository.InventoryRepository
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -36,6 +37,16 @@ fun InventoryScreen(
     var selectedCategoryFilter by remember { mutableStateOf("All") }
     var showAiChatSheet by remember { mutableStateOf(false) }
     var showVoiceCaptureSheet by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Multi-selection & Batch Research State
+    var isSelectionMode by remember { mutableStateOf(false) }
+    val selectedItemIds = remember { mutableStateListOf<String>() }
+    var showBatchResearchDialog by remember { mutableStateOf(false) }
+    var isBatchResearching by remember { mutableStateOf(false) }
+    var batchProgress by remember { mutableStateOf(0 to 0) }
+    var currentBatchItemName by remember { mutableStateOf("") }
+    var batchSuccessCount by remember { mutableStateOf(0) }
 
     val allItems by inventoryRepository.allActiveItems.collectAsStateWithLifecycle(initialValue = emptyList())
     val searchResults by inventoryRepository.searchItems(searchQuery).collectAsStateWithLifecycle(initialValue = emptyList())
@@ -53,43 +64,114 @@ fun InventoryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "Inventory (${allItems.size})",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            )
+            if (isSelectionMode) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "Selected (${selectedItemIds.size})",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            isSelectionMode = false
+                            selectedItemIds.clear()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel")
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = {
+                            if (selectedItemIds.size == displayedItems.size) {
+                                selectedItemIds.clear()
+                            } else {
+                                selectedItemIds.clear()
+                                selectedItemIds.addAll(displayedItems.map { it.id })
+                            }
+                        }) {
+                            Text(if (selectedItemIds.size == displayedItems.size) "Deselect All" else "Select All")
+                        }
+                    }
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "Inventory (${allItems.size})",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    actions = {
+                        FilledTonalButton(
+                            onClick = { isSelectionMode = true },
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .testTag("select_items_button"),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Checklist, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Select", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                )
+            }
         },
         floatingActionButton = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Voice Capture: Tell Home AI [ 🎙 ]
-                FloatingActionButton(
-                    onClick = { showVoiceCaptureSheet = true },
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.testTag("inventory_voice_capture_button")
+            if (isSelectionMode) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        if (selectedItemIds.isNotEmpty()) {
+                            showBatchResearchDialog = true
+                            isBatchResearching = true
+                            batchProgress = 0 to selectedItemIds.size
+                            batchSuccessCount = 0
+                            coroutineScope.launch {
+                                val success = inventoryRepository.batchResearchItems(selectedItemIds.toList()) { cur, total, name ->
+                                    batchProgress = cur to total
+                                    currentBatchItemName = name
+                                }
+                                batchSuccessCount = success
+                                isBatchResearching = false
+                            }
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
+                    text = { Text("Research Selected (${selectedItemIds.size})", fontWeight = FontWeight.Bold) },
+                    modifier = Modifier.testTag("bulk_research_button"),
+                    expanded = true
+                )
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Tell Home AI",
-                        modifier = Modifier.size(24.dp)
+                    // Voice Capture: Tell Home AI [ 🎙 ]
+                    FloatingActionButton(
+                        onClick = { showVoiceCaptureSheet = true },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.testTag("inventory_voice_capture_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Tell Home AI",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // AI Chat / Add via AI: Ask Home AI [ ✨ Add via AI ]
+                    ExtendedFloatingActionButton(
+                        onClick = { showAiChatSheet = true },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
+                        text = { Text("Add via AI", fontWeight = FontWeight.SemiBold) },
+                        modifier = Modifier.testTag("inventory_ai_chat_button")
                     )
                 }
-
-                // AI Chat / Add via AI: Ask Home AI [ ✨ Add via AI ]
-                ExtendedFloatingActionButton(
-                    onClick = { showAiChatSheet = true },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
-                    text = { Text("Add via AI", fontWeight = FontWeight.SemiBold) },
-                    modifier = Modifier.testTag("inventory_ai_chat_button")
-                )
             }
         }
     ) { padding ->
@@ -168,12 +250,98 @@ fun InventoryScreen(
                             item = item,
                             imagePath = primaryImage?.thumbnailPath ?: primaryImage?.localPath,
                             locationPath = locPath,
-                            onClick = { onNavigateToItemDetail(item.id) }
+                            onClick = { onNavigateToItemDetail(item.id) },
+                            isSelectionMode = isSelectionMode,
+                            isSelected = selectedItemIds.contains(item.id),
+                            onSelectionToggle = {
+                                if (selectedItemIds.contains(item.id)) {
+                                    selectedItemIds.remove(item.id)
+                                } else {
+                                    selectedItemIds.add(item.id)
+                                }
+                            }
                         )
                     }
                 }
             }
         }
+    }
+
+    // Batch Research Modal Dialog
+    if (showBatchResearchDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isBatchResearching) showBatchResearchDialog = false
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(if (isBatchResearching) "Bulk Researching Items..." else "Bulk Research Complete!")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (isBatchResearching) {
+                        LinearProgressIndicator(
+                            progress = {
+                                if (batchProgress.second > 0) {
+                                    batchProgress.first.toFloat() / batchProgress.second.toFloat()
+                                } else 0f
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Researching item ${batchProgress.first} of ${batchProgress.second}:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            currentBatchItemName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Synthesizing official manuals & 3-5 forums (Reddit, iFixit, YouTube) for common failure points, tips, and replacement parts...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    } else {
+                        Text(
+                            "✅ Successfully completed deep research for $batchSuccessCount items!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "All selected items have been populated with official user manuals, common forum issues & fixes, pro maintenance tips, and scheduled maintenance tasks.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBatchResearchDialog = false
+                        isSelectionMode = false
+                        selectedItemIds.clear()
+                    },
+                    enabled = !isBatchResearching
+                ) {
+                    Text(if (isBatchResearching) "Researching..." else "Done")
+                }
+            }
+        )
     }
 
     if (showAiChatSheet) {

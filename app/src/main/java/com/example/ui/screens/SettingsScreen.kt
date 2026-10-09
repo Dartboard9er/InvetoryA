@@ -88,7 +88,10 @@ fun SettingsScreen(
 
                     OutlinedTextField(
                         value = apiKeyText,
-                        onValueChange = { apiKeyText = it },
+                        onValueChange = {
+                            apiKeyText = it
+                            geminiService.saveApiKey(it)
+                        },
                         label = { Text("Gemini API Key") },
                         placeholder = { Text("AIzaSy...") },
                         modifier = Modifier.fillMaxWidth().testTag("gemini_api_key_input"),
@@ -104,6 +107,24 @@ fun SettingsScreen(
                             }
                         }
                     )
+
+                    if (geminiService.getApiKey().isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "API Key active & saved in memory",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 

@@ -153,4 +153,41 @@ class HomeAiCoreLogicTest {
         assertEquals("Hardware", result.category)
         assertTrue(result.confidence > 0.9f)
     }
+
+    @Test
+    fun testItemResearchResultStructure() {
+        val research = com.example.ai.gemini.ItemResearchResult(
+            manualTitle = "DeWalt DCD791 Instruction Manual",
+            manualUrl = "https://www.dewalt.com/support",
+            manualSummary = "Official manual with clutch settings and 2-speed transmission guide.",
+            forumSources = listOf("r/Dewalt Reddit", "iFixit Tool Guides", "Garage Journal Forums"),
+            commonIssues = listOf(
+                com.example.ai.gemini.IssueTipItem(
+                    issue = "Keyless Chuck Slipping",
+                    symptom = "Bit slips under load",
+                    solution = "Tighten chuck until ratcheting clicks engaged; clean jaws with dry PTFE lube.",
+                    source = "r/Dewalt Community"
+                )
+            ),
+            proTips = listOf("Use PowerStack battery for overhead drilling to reduce fatigue."),
+            maintenanceTasks = listOf(
+                com.example.ai.gemini.ResearchMaintenanceTask(
+                    title = "Blow out motor vents",
+                    intervalDays = 60,
+                    description = "Clear drywall dust with compressed air."
+                )
+            ),
+            recommendedParts = listOf("DeWalt Chuck N392987", "DeWalt 20V 5Ah Battery DCB205"),
+            specsSummary = "20V Max Brushless • 0-2000 RPM • 460 UWO",
+            safetyNotes = "Remove battery before changing bits."
+        )
+
+        assertEquals("DeWalt DCD791 Instruction Manual", research.manualTitle)
+        assertEquals(3, research.forumSources.size)
+        assertEquals(1, research.commonIssues.size)
+        assertEquals("Keyless Chuck Slipping", research.commonIssues.first().issue)
+        assertEquals(1, research.maintenanceTasks.size)
+        assertEquals(60, research.maintenanceTasks.first().intervalDays)
+        assertEquals(2, research.recommendedParts.size)
+    }
 }

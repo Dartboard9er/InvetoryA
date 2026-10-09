@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -60,7 +61,7 @@ fun ScanHomeScreen(
     }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
             coroutineScope.launch {
@@ -168,7 +169,11 @@ fun ScanHomeScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Import Photo Action
                     IconButton(
-                        onClick = { photoPickerLauncher.launch("image/*") },
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
                         modifier = Modifier
                             .background(Color.White.copy(alpha = 0.15f), CircleShape)
                             .testTag("import_photo_button")

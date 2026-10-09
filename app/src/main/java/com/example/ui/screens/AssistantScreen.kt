@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.net.Uri
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -31,11 +33,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ai.gemini.GeminiService
 import com.example.ai.modes.AssistantMode
 import com.example.data.local.entities.ChatMessageEntity
 import com.example.data.repository.AssistantRepository
 import com.example.data.repository.InventoryRepository
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -43,8 +47,10 @@ import java.util.*
 @Composable
 fun AssistantScreen(
     assistantRepository: AssistantRepository,
-    inventoryRepository: InventoryRepository? = null
+    inventoryRepository: InventoryRepository? = null,
+    geminiService: GeminiService? = null
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var selectedMode by remember { mutableStateOf(AssistantMode.HOME_AI) }
     var isInConversation by remember { mutableStateOf(false) }
@@ -55,6 +61,43 @@ fun AssistantScreen(
     var isThinking by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+
+    // Photo picker launcher for visual queries
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let { pickedUri ->
+            coroutineScope.launch {
+                val tempFile = File.createTempFile("asst_photo_", ".jpg", context.cacheDir)
+                context.contentResolver.openInputStream(pickedUri)?.use { input ->
+                    tempFile.outputStream().use { out -> input.copyTo(out) }
+                }
+                isInConversation = true
+                isThinking = true
+                if (geminiService != null) {
+                    val result = geminiService.analyzeSingleItem(tempFile)
+                    if (result.isSuccess) {
+                        val res = result.getOrNull()!!
+                        if (inventoryRepository != null) {
+                            val saved = inventoryRepository.saveNewItemFromScan(
+                                scanResult = res,
+                                imageFile = tempFile,
+                                locationId = null
+                            )
+                            assistantRepository.sendMessage("I added '${saved.name}' (${saved.brand ?: "Item"}) to inventory from your photo.", selectedMode)
+                        } else {
+                            assistantRepository.sendMessage("I identified this item from your photo: '${res.name}' (${res.brand ?: ""}) in ${res.condition ?: "Good"} condition.", selectedMode)
+                        }
+                    } else {
+                        assistantRepository.sendMessage("Analyzed photo. Details: ${result.exceptionOrNull()?.message}", selectedMode)
+                    }
+                } else {
+                    assistantRepository.sendMessage("Attached photo of item.", selectedMode)
+                }
+                isThinking = false
+            }
+        }
+    }
 
     // Android Speech Recognizer launcher
     val speechLauncher = rememberLauncherForActivityResult(
@@ -332,6 +375,22 @@ fun AssistantScreen(
                         .navigationBarsPadding(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Photo Attachment Input
+                    IconButton(
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        modifier = Modifier.testTag("assistant_attach_photo_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = "Attach Photo",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
                     // Microphone Voice Input
                     IconButton(
                         onClick = {

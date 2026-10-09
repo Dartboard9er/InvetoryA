@@ -190,7 +190,9 @@ class MainActivity : ComponentActivity() {
 
                                 composable(Screen.Assistant.route) {
                                     AssistantScreen(
-                                        assistantRepository = assistantRepo
+                                        assistantRepository = assistantRepo,
+                                        inventoryRepository = inventoryRepo,
+                                        geminiService = geminiService
                                     )
                                 }
 

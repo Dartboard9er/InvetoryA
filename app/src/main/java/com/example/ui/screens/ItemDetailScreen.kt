@@ -1,7 +1,9 @@
 package com.example.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,28 +58,55 @@ fun ItemDetailScreen(
     val troubleshooting by inventoryRepository.observeTroubleshooting(itemId).collectAsStateWithLifecycle(initialValue = emptyList())
     val customFields by inventoryRepository.observeCustomFields(itemId).collectAsStateWithLifecycle(initialValue = emptyList())
     val locations by inventoryRepository.allLocations.collectAsStateWithLifecycle(initialValue = emptyList())
+    val profile by inventoryRepository.observeProfile(itemId).collectAsStateWithLifecycle(initialValue = null)
+    val documents by inventoryRepository.observeDocuments(itemId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val maintenanceTasks by inventoryRepository.observeTasksForItem(itemId).collectAsStateWithLifecycle(initialValue = emptyList())
 
     var locationPath by remember { mutableStateOf("Unassigned") }
     var showMoveDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     var showAddFieldDialog by remember { mutableStateOf(false) }
     var showTroubleshootDialog by remember { mutableStateOf(false) }
+    var showResearchDialog by remember { mutableStateOf(false) }
+    var isResearching by remember { mutableStateOf(false) }
+    var researchError by remember { mutableStateOf<String?>(null) }
+    var latestResearchResult by remember { mutableStateOf<com.example.ai.gemini.ItemResearchResult?>(null) }
 
     LaunchedEffect(item?.currentLocationId) {
         locationPath = inventoryRepository.getLocationPath(item?.currentLocationId)
     }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
             coroutineScope.launch {
                 val pair = fileManager.saveImportedImageForItem(itemId, it)
+                val imgFile = File(pair.first)
                 inventoryRepository.updateExistingItemObservation(
                     itemId = itemId,
-                    imageFile = File(pair.first),
+                    imageFile = imgFile,
                     locationId = item?.currentLocationId,
                     note = "Additional photo added"
                 )
+                // Analyze new photo to enrich item information if possible
+                if (geminiService.getApiKey().isNotEmpty()) {
+                    val analysis = geminiService.analyzeSingleItem(imgFile)
+                    if (analysis.isSuccess) {
+                        val res = analysis.getOrNull()!!
+                        item?.let { currentItem ->
+                            val updated = currentItem.copy(
+                                brand = currentItem.brand ?: res.brand,
+                                model = currentItem.model ?: res.model,
+                                serialNumber = currentItem.serialNumber ?: res.serialNumber ?: res.modelNumber,
+                                condition = res.condition ?: currentItem.condition,
+                                notes = if (currentItem.notes.isNullOrEmpty()) res.description else currentItem.notes
+                            )
+                            inventoryRepository.updateItem(updated)
+                            Toast.makeText(context, "AI extracted additional details from photo!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
             }
         }
     }
@@ -113,6 +142,16 @@ fun ItemDetailScreen(
                         }
                     }) {
                         Icon(Icons.Default.Archive, contentDescription = "Archive")
+                    }
+                    IconButton(
+                        onClick = { showDeleteDialog = true },
+                        modifier = Modifier.testTag("delete_item_button")
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete Item",
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             )
@@ -211,23 +250,50 @@ fun ItemDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                FilledTonalButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            showResearchDialog = true
+                            isResearching = true
+                            researchError = null
+                            val res = inventoryRepository.researchAndApplyToItem(itemId)
+                            isResearching = false
+                            if (res.isSuccess) {
+                                latestResearchResult = res.getOrNull()
+                            } else {
+                                researchError = res.exceptionOrNull()?.message ?: "Research failed"
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1.3f).testTag("research_item_button"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Research Intel", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
+
                 OutlinedButton(
-                    onClick = { photoPickerLauncher.launch("image/*") },
-                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    modifier = Modifier.weight(0.85f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Add Photo", style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Photo", style = MaterialTheme.typography.labelMedium)
                 }
 
                 OutlinedButton(
                     onClick = { showTroubleshootDialog = true },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(0.85f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Fix Issue", style = MaterialTheme.typography.labelMedium)
                 }
             }
@@ -249,6 +315,187 @@ fun ItemDetailScreen(
                     DetailRow(label = "Category", value = itm.category)
                     DetailRow(label = "Condition", value = itm.condition ?: "Good")
                     DetailRow(label = "AI Confidence", value = "${(itm.aiConfidence * 100).toInt()}%")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Manuals & Forum Intelligence Section
+            SectionHeader(title = "Manuals & Forum Intelligence", icon = Icons.Default.MenuBook)
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth().testTag("forum_intel_section_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (profile != null && profile!!.researchStatus == "KNOWLEDGE_READY") {
+                        val p = profile!!
+
+                        // Official Manual Card if present
+                        if (!p.manualUrl.isNullOrEmpty() || documents.any { it.documentType == "MANUAL" }) {
+                            val manualDoc = documents.find { it.documentType == "MANUAL" }
+                            val mUrl = p.manualUrl ?: manualDoc?.sourceUrl
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            Icon(Icons.Default.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                manualDoc?.name ?: "Official User Manual",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                        if (!mUrl.isNullOrEmpty()) {
+                                            FilledTonalButton(
+                                                onClick = {
+                                                    try {
+                                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(mUrl))
+                                                        context.startActivity(intent)
+                                                    } catch (_: Exception) {
+                                                        Toast.makeText(context, "Manual URL: $mUrl", Toast.LENGTH_LONG).show()
+                                                    }
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                            ) {
+                                                Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Open", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                    if (!manualDoc?.summary.isNullOrEmpty()) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            manualDoc!!.summary!!,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Common Issues from Forums
+                        if (!p.commonProblems.isNullOrEmpty()) {
+                            Text(
+                                "Common Issues & Fixes (From 3-5 Forums):",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            val issuesList = p.commonProblems!!.split("\n---\n")
+                            issuesList.forEach { iss ->
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text(iss, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Pro Maintenance Tips
+                        if (!p.maintenanceSummary.isNullOrEmpty()) {
+                            Text(
+                                "Community Pro Tips:",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(p.maintenanceSummary!!, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+
+                        // Recommended Parts
+                        if (!p.consumablesNeeded.isNullOrEmpty()) {
+                            Text(
+                                "Recommended Parts & Consumables:",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                p.consumablesNeeded!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+
+                        // Re-research button
+                        OutlinedButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    showResearchDialog = true
+                                    isResearching = true
+                                    researchError = null
+                                    val res = inventoryRepository.researchAndApplyToItem(itemId)
+                                    isResearching = false
+                                    if (res.isSuccess) {
+                                        latestResearchResult = res.getOrNull()
+                                    } else {
+                                        researchError = res.exceptionOrNull()?.message ?: "Research failed"
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Refresh Online Forum Intel", style = MaterialTheme.typography.labelSmall)
+                        }
+
+                    } else {
+                        // Empty state: prompt to research
+                        Text(
+                            "Get official user manuals, common issues, and pro tips synthesized from 3-5 online forums (Reddit, iFixit, YouTube teardowns, community boards).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    showResearchDialog = true
+                                    isResearching = true
+                                    researchError = null
+                                    val res = inventoryRepository.researchAndApplyToItem(itemId)
+                                    isResearching = false
+                                    if (res.isSuccess) {
+                                        latestResearchResult = res.getOrNull()
+                                    } else {
+                                        researchError = res.exceptionOrNull()?.message ?: "Research failed"
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("start_item_research_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Research Manuals & Tips Now")
+                        }
+                    }
                 }
             }
 
@@ -479,6 +726,125 @@ fun ItemDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showTroubleshootDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // AI Research Progress / Report Dialog
+    if (showResearchDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isResearching) showResearchDialog = false
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(if (isResearching) "Researching Online Intel..." else "Research Complete!")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (isResearching) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                "Scanning manufacturer databases & 3-5 consumer forums for '${itm.name}'...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Synthesizing manuals, common failure points, pro tips, and parts.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    } else if (researchError != null) {
+                        Text(
+                            text = "Research notice: $researchError",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        val res = latestResearchResult
+                        Text(
+                            "✅ Successfully gathered manuals & forum intel for '${itm.name}' and populated your item records!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (res != null) {
+                            if (!res.manualTitle.isNullOrEmpty()) {
+                                Text("📖 Manual: ${res.manualTitle}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            }
+                            if (res.forumSources.isNotEmpty()) {
+                                Text("🌐 Sources: ${res.forumSources.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (res.commonIssues.isNotEmpty()) {
+                                Text("⚠️ Common Issues: ${res.commonIssues.size} identified from community reports", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (res.proTips.isNotEmpty()) {
+                                Text("💡 Pro Tips: ${res.proTips.size} community maintenance tips added", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (res.maintenanceTasks.isNotEmpty()) {
+                                Text("🔧 Maintenance: ${res.maintenanceTasks.size} scheduled tasks added to calendar", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showResearchDialog = false },
+                    enabled = !isResearching
+                ) {
+                    Text(if (isResearching) "Please wait..." else "Done")
+                }
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            icon = { Icon(Icons.Default.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Delete Item?") },
+            text = {
+                Text("Are you sure you want to permanently delete '${itm.name}'? All associated photos and records will be removed from your device.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        coroutineScope.launch {
+                            inventoryRepository.deleteItem(itm.id, deleteFiles = true)
+                            showDeleteDialog = false
+                            onNavigateBack()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.testTag("confirm_delete_item_button")
+                ) {
+                    Text("Delete Permanently")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }

@@ -1,5 +1,9 @@
 package com.example.ui.components
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -53,7 +57,7 @@ fun InventoryAiChatSheet(
             listOf(
                 ChatItemMessage(
                     isUser = false,
-                    text = "Hi! Describe an item you want to add to your inventory. For example:\n• \"I put a box of 100 AA batteries in the garage shelf\"\n• \"Added my DeWalt drill DCD791 to the workbench drawer 2\"\n• \"Sony 65-inch OLED TV in living room\""
+                    text = "Hi! Describe an item you want to add to your inventory or tap 📷 to analyze a photo. For example:\n• \"I put a box of 100 AA batteries in the garage shelf\"\n• \"Added my DeWalt drill DCD791 to the workbench drawer 2\"\n• \"Sony 65-inch OLED TV in living room\""
                 )
             )
         )
@@ -61,6 +65,44 @@ fun InventoryAiChatSheet(
 
     var inputText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let { pickedUri ->
+            coroutineScope.launch {
+                val tempFile = File.createTempFile("chat_photo_", ".jpg", context.cacheDir)
+                context.contentResolver.openInputStream(pickedUri)?.use { input ->
+                    tempFile.outputStream().use { out -> input.copyTo(out) }
+                }
+                messages = messages + ChatItemMessage(isUser = true, text = "📷 Attached photo of item")
+                isProcessing = true
+                val result = geminiService.analyzeSingleItem(tempFile)
+                isProcessing = false
+                if (result.isSuccess) {
+                    val parsed = result.getOrNull()!!
+                    val matchedLoc = locations.firstOrNull()
+                    val saved = inventoryRepository.saveNewItemFromScan(
+                        scanResult = parsed,
+                        imageFile = tempFile,
+                        locationId = matchedLoc?.id
+                    )
+                    messages = messages + ChatItemMessage(
+                        isUser = false,
+                        text = "✨ Identified: '${parsed.name}' (${parsed.brand ?: "Brand detected"})\nModel: ${parsed.model ?: "N/A"}\nSaved to your inventory at ${matchedLoc?.name ?: "home"}!",
+                        parsedItem = parsed,
+                        savedItemId = saved.id
+                    )
+                } else {
+                    val err = result.exceptionOrNull()?.message ?: "Could not recognize item from photo."
+                    messages = messages + ChatItemMessage(
+                        isUser = false,
+                        text = "Could not identify item automatically: $err. Please check your Gemini API key in Settings or try another photo."
+                    )
+                }
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -263,6 +305,21 @@ fun InventoryAiChatSheet(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        modifier = Modifier.testTag("chat_attach_photo_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = "Attach Photo",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },

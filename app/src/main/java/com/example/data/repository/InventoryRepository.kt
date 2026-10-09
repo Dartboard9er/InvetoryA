@@ -458,4 +458,145 @@ class InventoryRepository(
     fun observeMemoriesForItem(itemId: String): Flow<List<AiMemoryEntity>> {
         return memoryDao.getMemoriesForItem(itemId)
     }
+
+    suspend fun researchAndApplyToItem(itemId: String): Result<com.example.ai.gemini.ItemResearchResult> = withContext(Dispatchers.IO) {
+        val item = itemDao.getItemById(itemId) ?: return@withContext Result.failure(Exception("Item not found: $itemId"))
+        val researchResult = geminiService.researchItemIntel(
+            name = item.name,
+            brand = item.brand,
+            model = item.model,
+            modelNumber = item.modelNumber,
+            category = item.category
+        )
+        if (researchResult.isSuccess) {
+            val research = researchResult.getOrNull()!!
+            applyResearchToItem(itemId, research)
+        }
+        researchResult
+    }
+
+    suspend fun applyResearchToItem(itemId: String, research: com.example.ai.gemini.ItemResearchResult): ItemEntity = withContext(Dispatchers.IO) {
+        val item = itemDao.getItemById(itemId) ?: throw IllegalStateException("Item not found: $itemId")
+        val now = System.currentTimeMillis()
+
+        // 1. Intelligence Profile
+        val profile = ItemIntelligenceProfileEntity(
+            itemId = itemId,
+            manufacturer = item.brand ?: item.manufacturer,
+            model = item.model ?: item.modelNumber,
+            researchStatus = "KNOWLEDGE_READY",
+            officialProductPage = research.manualUrl,
+            manualAvailable = !research.manualUrl.isNullOrEmpty() || !research.manualTitle.isNullOrEmpty(),
+            manualUrl = research.manualUrl,
+            maintenanceSummary = if (research.proTips.isNotEmpty()) "• " + research.proTips.joinToString("\n• ") else null,
+            consumablesNeeded = if (research.recommendedParts.isNotEmpty()) research.recommendedParts.joinToString(", ") else null,
+            commonProblems = if (research.commonIssues.isNotEmpty()) {
+                research.commonIssues.joinToString("\n---\n") { issue ->
+                    val sym = if (!issue.symptom.isNullOrEmpty()) " (${issue.symptom})" else ""
+                    val sol = if (!issue.solution.isNullOrEmpty()) " -> Fix: ${issue.solution}" else ""
+                    val src = if (!issue.source.isNullOrEmpty()) " [Source: ${issue.source}]" else ""
+                    "${issue.issue}$sym$sol$src"
+                }
+            } else null,
+            safetyNotes = research.safetyNotes,
+            lastResearchedAt = now
+        )
+        profileDao.insertProfile(profile)
+
+        // 2. Official Document / Manual
+        if (!research.manualTitle.isNullOrEmpty() || !research.manualUrl.isNullOrEmpty()) {
+            val doc = DocumentEntity(
+                id = UUID.randomUUID().toString(),
+                itemId = itemId,
+                name = research.manualTitle ?: "${item.name} User Manual",
+                localPath = "", // Web link reference
+                sourceUrl = research.manualUrl,
+                sourceDomain = research.forumSources.firstOrNull() ?: "Official Support",
+                documentType = "MANUAL",
+                manufacturer = item.brand,
+                downloadedAt = now,
+                summary = research.manualSummary
+            )
+            documentDao.insertDocument(doc)
+        }
+
+        // 3. Maintenance Tasks
+        for (task in research.maintenanceTasks) {
+            val mTask = MaintenanceTaskEntity(
+                id = UUID.randomUUID().toString(),
+                itemId = itemId,
+                title = task.title,
+                description = task.description,
+                intervalDays = task.intervalDays,
+                nextDueDate = now + (task.intervalDays * 24L * 60 * 60 * 1000),
+                source = "AI_SUGGESTION"
+            )
+            maintenanceDao.insertTask(mTask)
+        }
+
+        // 4. Custom Field for Specs if available
+        if (!research.specsSummary.isNullOrEmpty()) {
+            customFieldDao.insertField(
+                CustomFieldEntity(
+                    id = UUID.randomUUID().toString(),
+                    itemId = itemId,
+                    fieldName = "Specifications",
+                    fieldValue = research.specsSummary
+                )
+            )
+        }
+
+        // 5. Enrich Item Notes & AI Summary
+        var enrichedNotes = item.notes
+        if (enrichedNotes.isNullOrEmpty() && !research.specsSummary.isNullOrEmpty()) {
+            enrichedNotes = research.specsSummary
+        }
+
+        val enrichedSummary = if (item.aiSummary.isNullOrEmpty()) {
+            "Intel synthesized from ${research.forumSources.take(3).joinToString(", ")}. " + (research.proTips.firstOrNull() ?: "")
+        } else {
+            item.aiSummary
+        }
+
+        val updatedItem = item.copy(
+            notes = enrichedNotes,
+            aiSummary = enrichedSummary,
+            updatedAt = now
+        )
+        itemDao.updateItem(updatedItem)
+
+        // 6. Memory for Assistant
+        val topIssuesStr = research.commonIssues.take(2).map { it.issue }.joinToString(", ")
+        val topTip = research.proTips.firstOrNull() ?: ""
+        memoryDao.insertMemory(
+            AiMemoryEntity(
+                id = UUID.randomUUID().toString(),
+                type = "FACT",
+                itemId = itemId,
+                content = "Forum & Manual Intel for ${item.name}: Common issues ($topIssuesStr). Pro maintenance tip: $topTip",
+                importance = 0.85f,
+                source = "DOCUMENT_VERIFIED"
+            )
+        )
+
+        updatedItem
+    }
+
+    suspend fun batchResearchItems(
+        itemIds: List<String>,
+        onProgress: (current: Int, total: Int, currentItemName: String) -> Unit
+    ): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        val total = itemIds.size
+        for ((index, id) in itemIds.withIndex()) {
+            val itm = itemDao.getItemById(id)
+            val name = itm?.name ?: "Item"
+            onProgress(index + 1, total, name)
+            val res = researchAndApplyToItem(id)
+            if (res.isSuccess) {
+                count++
+            }
+        }
+        count
+    }
 }

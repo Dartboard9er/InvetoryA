@@ -127,16 +127,26 @@ fun ItemGridCard(
     imagePath: String?,
     locationPath: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectionToggle: (() -> Unit)? = null
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(onClick = {
+                if (isSelectionMode && onSelectionToggle != null) {
+                    onSelectionToggle()
+                } else {
+                    onClick()
+                }
+            }),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Column {
             // Photo Area
@@ -164,6 +174,28 @@ fun ItemGridCard(
                             tint = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(36.dp)
                         )
+                    }
+                }
+
+                // Selection Checkbox or Indicator
+                if (isSelectionMode) {
+                    Surface(
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f),
+                        shape = CircleShape,
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .size(26.dp)
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.padding(4.dp)
+                            )
+                        }
                     }
                 }
 
