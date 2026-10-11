@@ -158,18 +158,23 @@ fun ScanHomeScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
                     Text(
                         text = "HOME AI",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Black,
                         color = Color.White,
-                        letterSpacing = 1.2.sp
+                        letterSpacing = 1.2.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     Text(
                         text = "Your home, remembered.",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
 
@@ -219,15 +224,15 @@ fun ScanHomeScreen(
                     FilledTonalButton(
                         onClick = onNavigateToRoomSweep,
                         modifier = Modifier.testTag("room_sweep_button"),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.VideoCameraBack,
-                            contentDescription = null,
+                            contentDescription = "Room Sweep",
                             modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Room Sweep", style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Sweep", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

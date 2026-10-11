@@ -21,7 +21,9 @@ import java.io.File
 @Composable
 fun AiScanningOverlay(
     imageFile: File,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    statusText: String? = null,
+    onCancel: (() -> Unit)? = null
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "scan_transition")
     val offsetY by infiniteTransition.animateFloat(
@@ -34,15 +36,20 @@ fun AiScanningOverlay(
         label = "scanner_line"
     )
 
-    var phaseText by remember { mutableStateOf("Looking at your item...") }
+    var phaseText by remember { mutableStateOf("Inspecting image...") }
 
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(800)
-        phaseText = "Identifying brand & model..."
-        kotlinx.coroutines.delay(1200)
-        phaseText = "Checking existing inventory..."
-        kotlinx.coroutines.delay(1200)
-        phaseText = "Almost done..."
+    LaunchedEffect(statusText) {
+        if (!statusText.isNullOrBlank()) {
+            phaseText = statusText
+        } else {
+            phaseText = "Looking at your item..."
+            kotlinx.coroutines.delay(1000)
+            phaseText = "Identifying brand & model with Gemini..."
+            kotlinx.coroutines.delay(2000)
+            phaseText = "Extracting serial & specifications..."
+            kotlinx.coroutines.delay(2500)
+            phaseText = "Connecting with Gemini AI..."
+        }
     }
 
     Box(
@@ -90,31 +97,48 @@ fun AiScanningOverlay(
             )
         }
 
-        // Status Card at Bottom of Photo
+        // Status Card at Bottom of Photo with Cancel Button
         Surface(
-            color = Color.Black.copy(alpha = 0.8f),
+            color = Color.Black.copy(alpha = 0.85f),
             shape = RoundedCornerShape(12.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(14.dp)
+                .fillMaxWidth()
+                .padding(12.dp)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = phaseText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = if (!statusText.isNullOrBlank()) statusText else phaseText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
+                if (onCancel != null) {
+                    TextButton(
+                        onClick = onCancel,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Skip / Edit Manually", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
     }

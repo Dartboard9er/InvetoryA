@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
@@ -61,15 +62,28 @@ class MainActivity : ComponentActivity() {
                         // Adaptive Navigation Rail on tablets / wide screens
                         if (isExpanded && currentRoute in primaryNavItems.map { it.route }) {
                             NavigationRail(
-                                modifier = Modifier.fillMaxHeight()
+                                modifier = Modifier.fillMaxHeight(),
+                                containerColor = MaterialTheme.colorScheme.surface
                             ) {
                                 Spacer(modifier = Modifier.height(16.dp))
                                 primaryNavItems.forEach { screen ->
                                     val isSelected = currentRoute == screen.route
                                     NavigationRailItem(
                                         icon = { Icon(screen.icon, contentDescription = screen.title) },
-                                        label = { Text(screen.title) },
+                                        label = {
+                                            Text(
+                                                screen.title,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        },
+                                        alwaysShowLabel = true,
                                         selected = isSelected,
+                                        colors = NavigationRailItemDefaults.colors(
+                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                                        ),
                                         modifier = Modifier.testTag("nav_rail_${screen.route}"),
                                         onClick = {
                                             navController.navigate(screen.route) {
@@ -90,13 +104,28 @@ class MainActivity : ComponentActivity() {
                             bottomBar = {
                                 // Bottom Navigation Bar on compact phones
                                 if (!isExpanded && currentRoute in primaryNavItems.map { it.route }) {
-                                    NavigationBar {
+                                    NavigationBar(
+                                        tonalElevation = 3.dp,
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    ) {
                                         primaryNavItems.forEach { screen ->
                                             val isSelected = currentRoute == screen.route
                                             NavigationBarItem(
                                                 icon = { Icon(screen.icon, contentDescription = screen.title) },
-                                                label = { Text(screen.title) },
+                                                label = {
+                                                    Text(
+                                                        screen.title,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                                    )
+                                                },
+                                                alwaysShowLabel = true,
                                                 selected = isSelected,
+                                                colors = NavigationBarItemDefaults.colors(
+                                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                                                ),
                                                 modifier = Modifier.testTag("nav_item_${screen.route}"),
                                                 onClick = {
                                                     navController.navigate(screen.route) {

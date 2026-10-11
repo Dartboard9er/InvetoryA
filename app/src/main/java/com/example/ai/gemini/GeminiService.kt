@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 object AIConfiguration {
     // Current official Gemini models as per gemini-api skill guidelines
     const val MODEL_FAST_VISION = "gemini-3.5-flash"
-    const val MODEL_FALLBACK_VISION = "gemini-2.5-flash"
+    const val MODEL_FALLBACK_VISION = "gemini-flash-latest"
     const val MODEL_REASONING = "gemini-3.1-pro-preview"
     const val MODEL_EMBEDDINGS = "gemini-embedding-2-preview"
 }
@@ -38,9 +38,9 @@ class GeminiService(private val context: Context) {
         .build()
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .writeTimeout(25, TimeUnit.SECONDS)
         .build()
 
     fun getApiKey(): String {
@@ -136,7 +136,7 @@ class GeminiService(private val context: Context) {
         }
 
         try {
-            val base64Image = encodeImageToBase64(imageFile, maxDimension = 1440)
+            val base64Image = encodeImageToBase64(imageFile, maxDimension = 1024)
             val prompt = buildString {
                 append("You are Home AI's expert visual household inventory analyzer. ")
                 append("Your primary mission is to examine this user's photo and AUTOMATICALLY identify the object and extract all details so the user does NOT need to fill them in manually. ")
@@ -207,14 +207,24 @@ class GeminiService(private val context: Context) {
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val err = response.body?.string() ?: ""
-                    // Try fallback model if fast vision had temporary issues
-                    val fallbackResult = tryFallbackModels(apiKey, requestJson)
-                    if (fallbackResult != null) {
-                        recordUsage()
-                        return@withContext Result.success(fallbackResult)
+                    val rawErr = response.body?.string() ?: ""
+                    val parsedMsg = try {
+                        val root = JSONObject(rawErr)
+                        val errObj = root.optJSONObject("error")
+                        errObj?.optString("message") ?: rawErr
+                    } catch (_: Exception) {
+                        rawErr
                     }
-                    return@withContext Result.failure(Exception("Gemini error (${response.code}): $err"))
+
+                    // Only try fallback model if the primary model was not found (404) or server was overloaded (5xx)
+                    if (response.code == 404 || response.code in 500..599) {
+                        val fallbackResult = tryFallbackModels(apiKey, requestJson)
+                        if (fallbackResult != null) {
+                            recordUsage()
+                            return@withContext Result.success(fallbackResult)
+                        }
+                    }
+                    return@withContext Result.failure(Exception("Gemini error (${response.code}): $parsedMsg"))
                 }
                 val respStr = response.body?.string() ?: ""
                 val jsonText = parseCandidateText(respStr)
@@ -229,7 +239,7 @@ class GeminiService(private val context: Context) {
     }
 
     private fun tryFallbackModels(apiKey: String, requestJson: JSONObject): SingleItemScanResult? {
-        val fallbackModels = listOf(AIConfiguration.MODEL_FALLBACK_VISION, AIConfiguration.MODEL_REASONING, "gemini-flash-latest")
+        val fallbackModels = listOf(AIConfiguration.MODEL_FALLBACK_VISION, AIConfiguration.MODEL_REASONING)
         for (model in fallbackModels) {
             try {
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"

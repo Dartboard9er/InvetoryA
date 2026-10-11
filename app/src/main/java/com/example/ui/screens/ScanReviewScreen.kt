@@ -37,7 +37,9 @@ import com.example.data.repository.InventoryRepository
 import com.example.ui.components.NetworkStatusBadge
 import com.example.ui.components.VoiceFieldDictationDialog
 import com.example.util.NetworkMonitor
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,6 +60,8 @@ fun ScanReviewScreen(
 
     var activeImageFile by remember(imageFile) { mutableStateOf(imageFile) }
     var isAnalyzing by remember { mutableStateOf(true) }
+    var analysisStatusText by remember { mutableStateOf<String?>("Analyzing image with Gemini...") }
+    var analysisJob by remember { mutableStateOf<Job?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var scanResult by remember { mutableStateOf<SingleItemScanResult?>(null) }
     var duplicateMatches by remember { mutableStateOf<List<ItemEntity>>(emptyList()) }
@@ -98,11 +102,27 @@ fun ScanReviewScreen(
         }
     }
 
-    // Reusable analyze function
+    // Cancel current AI scan and allow manual entry
+    fun cancelAnalysis(reason: String? = null) {
+        analysisJob?.cancel()
+        analysisJob = null
+        isAnalyzing = false
+        analysisStatusText = null
+        if (reason != null) {
+            errorMessage = reason
+        }
+        if (nameText.isBlank()) {
+            nameText = "Scanned Item"
+        }
+    }
+
+    // Reusable analyze function with hard timeout protection and safe fallbacks
     fun performAiAnalysis(targetFile: File = activeImageFile) {
-        coroutineScope.launch {
+        analysisJob?.cancel()
+        analysisJob = coroutineScope.launch {
             isAnalyzing = true
             errorMessage = null
+            analysisStatusText = "Connecting with Gemini AI..."
 
             if (!targetFile.exists() || targetFile.length() == 0L) {
                 try {
@@ -116,15 +136,32 @@ fun ScanReviewScreen(
             if (apiKey.isEmpty()) {
                 isAnalyzing = false
                 isKeyMissing = true
-                errorMessage = "Gemini API key is required for automated item extraction. Enter your key below to auto-identify."
+                analysisStatusText = null
+                errorMessage = "Gemini API key is required for automated item extraction. Enter your key below or fill fields manually."
                 if (nameText.isEmpty()) nameText = "Scanned Item"
                 return@launch
             }
 
             isKeyMissing = false
-            val result = geminiService.analyzeSingleItem(targetFile)
+            analysisStatusText = "Identifying item brand, model & specs..."
+
+            // 20-second maximum total timeout to prevent hanging
+            val result = withTimeoutOrNull(20_000L) {
+                try {
+                    geminiService.analyzeSingleItem(targetFile)
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+            }
+
             isAnalyzing = false
-            if (result.isSuccess) {
+            analysisStatusText = null
+
+            if (result == null) {
+                // Timeout occurred
+                errorMessage = "Analysis timed out (network connection was slow or Gemini took too long). You can retry or fill in details below."
+                if (nameText.isEmpty()) nameText = "Scanned Item"
+            } else if (result.isSuccess) {
                 val res = result.getOrNull()!!
                 scanResult = res
                 nameText = res.name
@@ -143,8 +180,16 @@ fun ScanReviewScreen(
                 val matches = inventoryRepository.findDuplicateCandidates(res)
                 duplicateMatches = matches
             } else {
-                val err = result.exceptionOrNull()?.message ?: "AI analysis failed."
-                errorMessage = err
+                val rawErr = result.exceptionOrNull()?.message ?: "AI analysis failed."
+                errorMessage = if (rawErr.contains("400") || rawErr.contains("API_KEY_INVALID") || rawErr.contains("API key not valid", ignoreCase = true) || rawErr.contains("PERMISSION_DENIED", ignoreCase = true) || rawErr.contains("403")) {
+                    "Invalid or unauthorized Gemini API key. Please check your key in Settings or re-enter it below."
+                } else if (rawErr.contains("429") || rawErr.contains("RESOURCE_EXHAUSTED", ignoreCase = true)) {
+                    "Gemini quota exceeded or rate limited. Please try again shortly."
+                } else if (rawErr.contains("404")) {
+                    "Gemini model not found. Retrying or manual edit recommended."
+                } else {
+                    "Notice: $rawErr. You can edit details manually below."
+                }
                 if (nameText.isEmpty()) nameText = "Scanned Item"
             }
         }
@@ -185,7 +230,11 @@ fun ScanReviewScreen(
             if (isAnalyzing) {
                 com.example.ui.components.AiScanningOverlay(
                     imageFile = activeImageFile,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    statusText = analysisStatusText,
+                    onCancel = {
+                        cancelAnalysis(reason = "AI scan skipped by user. You can enter or edit details manually below.")
+                    }
                 )
             } else {
                 Box(
@@ -390,12 +439,20 @@ fun ScanReviewScreen(
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = { performAiAnalysis(activeImageFile) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                        ) {
-                            Text("Retry AI Identification")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { performAiAnalysis(activeImageFile) },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text("Retry AI Identification")
+                            }
+                            OutlinedButton(
+                                onClick = { isKeyMissing = true },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text("Change API Key")
+                            }
                         }
                     }
                 }

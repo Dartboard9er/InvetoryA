@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,6 +54,7 @@ fun InventoryScreen(
     var showAiChatSheet by remember { mutableStateOf(false) }
     var showVoiceCaptureSheet by remember { mutableStateOf(false) }
     var showAddOfflineDialog by remember { mutableStateOf(false) }
+    var showHeaderMenu by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     // Multi-selection & Batch Research State
@@ -125,39 +127,35 @@ fun InventoryScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                "Inventory",
+                                text = "Inventory",
+                                style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Black,
-                                letterSpacing = (-0.5).sp
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                             Surface(
                                 color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
                                     text = "${allItems.size}",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
                     },
                     actions = {
-                        // Network status badge (Online vs Offline Mode)
-                        NetworkStatusBadge(
-                            isOnline = isOnline,
-                            hasApiKey = hasApiKey,
-                            modifier = Modifier.padding(end = 4.dp)
-                        )
-
-                        // Quick Add Item Button (100% Offline, no API required)
+                        // Quick Add Item Button (100% Offline, direct manual entry)
                         IconButton(
                             onClick = { showAddOfflineDialog = true },
                             modifier = Modifier.testTag("add_item_offline_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AddCircle,
+                                imageVector = Icons.Default.Add,
                                 contentDescription = "Add Item Directly",
                                 tint = MaterialTheme.colorScheme.primary
                             )
@@ -169,23 +167,78 @@ fun InventoryScreen(
                             modifier = Modifier.testTag("toggle_view_mode_button")
                         ) {
                             Icon(
-                                imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                                imageVector = if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                                 contentDescription = if (isGridView) "Switch to List View" else "Switch to Grid View",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
-                        // Select Mode Button
-                        FilledTonalButton(
+                        // Select Mode / Batch Operation Button
+                        IconButton(
                             onClick = { isSelectionMode = true },
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .testTag("select_items_button"),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.testTag("select_items_button")
                         ) {
-                            Icon(Icons.Default.Checklist, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Select", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            Icon(
+                                imageVector = Icons.Default.Checklist,
+                                contentDescription = "Select Items",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Overflow Menu for additional actions and narrow screen support
+                        Box {
+                            IconButton(
+                                onClick = { showHeaderMenu = true },
+                                modifier = Modifier.testTag("inventory_header_menu_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More Options",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showHeaderMenu,
+                                onDismissRequest = { showHeaderMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Select Items") },
+                                    leadingIcon = { Icon(Icons.Default.Checklist, contentDescription = null) },
+                                    onClick = {
+                                        showHeaderMenu = false
+                                        isSelectionMode = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Add Item Directly") },
+                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                    onClick = {
+                                        showHeaderMenu = false
+                                        showAddOfflineDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (isGridView) "Switch to List View" else "Switch to Grid View") },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        showHeaderMenu = false
+                                        isGridView = !isGridView
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Add via AI Assistant") },
+                                    leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
+                                    onClick = {
+                                        showHeaderMenu = false
+                                        showAiChatSheet = true
+                                    }
+                                )
+                            }
                         }
                     }
                 )
@@ -282,79 +335,74 @@ fun InventoryScreen(
             )
 
             // Streamlined Search Bar with Integrated Voice Capture Button
-            Surface(
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .testTag("inventory_search_bar"),
+                placeholder = {
+                    Text(
+                        "Search items, brands, locations, serials...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                },
+                leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("inventory_search_bar"),
-                        placeholder = {
-                            Text(
-                                "Search items, brands, serials...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            )
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
-                        )
-                    )
-
-                    if (searchQuery.isNotEmpty()) {
+                },
+                trailingIcon = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Clear,
+                                    contentDescription = "Clear search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                         IconButton(
-                            onClick = { searchQuery = "" },
-                            modifier = Modifier.size(36.dp)
+                            onClick = { showVoiceCaptureSheet = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f))
+                                .testTag("inventory_voice_capture_button")
                         ) {
                             Icon(
-                                Icons.Default.Clear,
-                                contentDescription = "Clear search",
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Tell Home AI",
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                     }
-
-                    // Integrated Voice Dictation Button right inside search bar!
-                    IconButton(
-                        onClick = { showVoiceCaptureSheet = true },
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f))
-                            .testTag("inventory_voice_capture_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Tell Home AI",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                )
+            )
 
             // Streamlined Category Filter Chips Row
             LazyRow(
@@ -397,55 +445,85 @@ fun InventoryScreen(
                 }
             }
 
-            // Quick Status summary line
+            // Quick Status summary line with Network Status
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "${displayedItems.size} item${if (displayedItems.size == 1) "" else "s"}${if (selectedCategoryFilter != "All") " in $selectedCategoryFilter" else ""}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-
-                if (readyProfileItemIds.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
-                        text = "✨ ${readyProfileItemIds.size} researched",
+                        text = "${displayedItems.size} item${if (displayedItems.size == 1) "" else "s"}${if (selectedCategoryFilter != "All") " in $selectedCategoryFilter" else ""}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
+                        color = MaterialTheme.colorScheme.outline
                     )
+
+                    if (readyProfileItemIds.isNotEmpty()) {
+                        Text(
+                            text = "✨ ${readyProfileItemIds.size} researched",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
+
+                NetworkStatusBadge(
+                    isOnline = isOnline,
+                    hasApiKey = hasApiKey
+                )
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
             // Items List or Grid or Empty State
             if (displayedItems.isEmpty()) {
-                EmptyStateCard(
-                    icon = Icons.Default.Inventory2,
-                    title = if (searchQuery.isEmpty()) "Your inventory is empty" else "No matching items",
-                    description = if (searchQuery.isEmpty()) "Scan an item or tap 'Add via AI' to start organizing your home." else "Try searching by brand, model number, or room.",
-                    actionButtonText = if (searchQuery.isEmpty()) "Add First Item" else "Clear Search",
-                    onActionClick = {
-                        if (searchQuery.isNotEmpty()) {
+                if (searchQuery.isNotEmpty()) {
+                    EmptyStateCard(
+                        icon = Icons.Default.SearchOff,
+                        title = "No items found",
+                        description = "We couldn't find anything matching \"$searchQuery\". Try checking the spelling or search by room, category, or serial number.",
+                        actionButtonText = "Clear Search",
+                        onActionClick = {
                             searchQuery = ""
                             selectedCategoryFilter = "All"
-                        } else {
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (selectedCategoryFilter != "All") {
+                    EmptyStateCard(
+                        icon = Icons.Default.Category,
+                        title = "No items in $selectedCategoryFilter",
+                        description = "You don't have any items categorized under \"$selectedCategoryFilter\" yet.",
+                        actionButtonText = "View All Items",
+                        onActionClick = {
+                            selectedCategoryFilter = "All"
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    EmptyStateCard(
+                        icon = Icons.Default.Inventory2,
+                        title = "Your inventory is empty",
+                        description = "Start cataloging your home! Scan an item with your camera, add items directly, or tell Home AI via voice.",
+                        actionButtonText = "Add First Item",
+                        onActionClick = {
                             showAiChatSheet = true
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             } else if (isGridView) {
                 // Balanced 2-Column Grid View
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 88.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 116.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -481,7 +559,7 @@ fun InventoryScreen(
                 // Streamlined, Uncluttered Full-Width List View
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 88.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 116.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(displayedItems, key = { it.id }) { item ->

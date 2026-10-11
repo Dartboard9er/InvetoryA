@@ -136,6 +136,7 @@ fun ItemGridCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = {
                 if (isSelectionMode && onSelectionToggle != null) {
                     onSelectionToggle()
@@ -145,9 +146,9 @@ fun ItemGridCard(
             }),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
         ),
-        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
     ) {
         Column {
             // Photo Area
@@ -166,13 +167,15 @@ fun ItemGridCard(
                     )
                 } else {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Inventory2,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.outline,
+                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
                             modifier = Modifier.size(36.dp)
                         )
                     }
@@ -203,7 +206,7 @@ fun ItemGridCard(
                 // Top start: Intel Badge if research profile exists
                 if (hasIntelProfile && !isSelectionMode) {
                     Surface(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -251,16 +254,16 @@ fun ItemGridCard(
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
                     text = item.name,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (!item.brand.isNullOrEmpty() || !item.model.isNullOrEmpty()) {
                     Text(
-                        text = listOfNotNull(item.brand, item.model).joinToString(" "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary,
+                        text = listOfNotNull(item.brand, item.model).joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -270,14 +273,14 @@ fun ItemGridCard(
                     Icon(
                         imageVector = Icons.Default.Place,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = locationPath,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.outline,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -302,6 +305,7 @@ fun ItemListCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = {
                 if (isSelectionMode && onSelectionToggle != null) {
                     onSelectionToggle()
@@ -321,11 +325,11 @@ fun ItemListCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail
+            // Thumbnail with graceful placeholder
             Box(
                 modifier = Modifier
-                    .size(68.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surface),
                 contentAlignment = Alignment.Center
             ) {
@@ -337,12 +341,19 @@ fun ItemListCard(
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(28.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
             }
 
@@ -393,7 +404,7 @@ fun ItemListCard(
                     Text(
                         text = listOfNotNull(item.brand, item.model).joinToString(" • "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary,
+                        color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -423,7 +434,7 @@ fun ItemListCard(
                         Icon(
                             imageVector = Icons.Default.Place,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
@@ -464,7 +475,7 @@ fun ItemListCard(
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outline
+                    tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
                 )
             }
         }

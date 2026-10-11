@@ -54,27 +54,33 @@ fun LocationsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Locations & Rooms", fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Locations & Rooms",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
                                 text = "${locations.size}",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
                     }
                 },
                 actions = {
-                    NetworkStatusBadge(
-                        isOnline = isOnline,
-                        modifier = Modifier.padding(end = 4.dp)
-                    )
                     FilledTonalButton(
                         onClick = { showAddLocationDialog = true },
                         modifier = Modifier.padding(end = 8.dp),

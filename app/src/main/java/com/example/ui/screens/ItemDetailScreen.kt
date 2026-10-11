@@ -73,6 +73,7 @@ fun ItemDetailScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
     var showAddFieldDialog by remember { mutableStateOf(false) }
     var showTroubleshootDialog by remember { mutableStateOf(false) }
     var showResearchDialog by remember { mutableStateOf(false) }
@@ -134,41 +135,74 @@ fun ItemDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(itm.name, fontWeight = FontWeight.Bold, maxLines = 1) },
+                title = {
+                    Text(
+                        text = itm.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    NetworkStatusBadge(
-                        isOnline = isOnline,
-                        hasApiKey = hasApiKey,
-                        modifier = Modifier.padding(end = 4.dp)
-                    )
                     IconButton(onClick = { showEditDialog = true }) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit Item Details")
                     }
-                    IconButton(onClick = { showMoveDialog = true }) {
-                        Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move")
-                    }
-                    IconButton(onClick = {
-                        coroutineScope.launch {
-                            inventoryRepository.archiveItem(itm.id)
-                            onNavigateBack()
+                    Box {
+                        IconButton(onClick = { showMoreMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More Options")
                         }
-                    }) {
-                        Icon(Icons.Default.Archive, contentDescription = "Archive")
-                    }
-                    IconButton(
-                        onClick = { showDeleteDialog = true },
-                        modifier = Modifier.testTag("delete_item_button")
-                    ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete Item",
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Move Location") },
+                                leadingIcon = {
+                                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = null)
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showMoveDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Archive Item") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Archive, contentDescription = null)
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    coroutineScope.launch {
+                                        inventoryRepository.archiveItem(itm.id)
+                                        onNavigateBack()
+                                    }
+                                }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = {
+                                    Text("Delete Item", color = MaterialTheme.colorScheme.error)
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showDeleteDialog = true
+                                },
+                                modifier = Modifier.testTag("delete_item_button")
+                            )
+                        }
                     }
                 }
             )

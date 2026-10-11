@@ -123,7 +123,7 @@ fun AssistantScreen(
         }
     }
 
-    LaunchedEffect(messages.size) {
+    LaunchedEffect(messages.size, isThinking) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
@@ -168,33 +168,43 @@ fun AssistantScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
                             .clickable { showModeSheet = true }
-                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                            .testTag("assistant_mode_selector_button")
                     ) {
-                        Text(selectedMode.emoji, style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(selectedMode.emoji, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = selectedMode.title,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                    Icon(
+                                        Icons.Default.ArrowDropDown,
+                                        contentDescription = "Switch Mode",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                                 Text(
-                                    selectedMode.title,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Icon(
-                                    Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
+                                    text = selectedMode.scopeBadge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
-                            Text(
-                                selectedMode.scopeBadge,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                         }
                     }
                 },
@@ -211,9 +221,12 @@ fun AssistantScreen(
                         hasApiKey = hasApiKey,
                         modifier = Modifier.padding(end = 4.dp)
                     )
-                    IconButton(onClick = {
-                        coroutineScope.launch { assistantRepository.clearHistory(selectedMode) }
-                    }) {
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch { assistantRepository.clearHistory(selectedMode) }
+                        },
+                        modifier = Modifier.testTag("assistant_clear_chat_button")
+                    ) {
                         Icon(Icons.Default.DeleteOutline, contentDescription = "Clear Chat")
                     }
                 }
@@ -224,34 +237,39 @@ fun AssistantScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
         ) {
             OfflineNoticeBanner(
                 isOnline = isOnline,
                 hasApiKey = hasApiKey
             )
+
+            // Main Content Area (Landing Mode Chooser OR Active Conversation)
             if (!isInConversation && messages.isEmpty()) {
                 // ASSISTANT LANDING SCREEN (Mode Selection & Quick Start)
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     item {
                         Column {
                             Text(
                                 text = "Home AI",
-                                style = MaterialTheme.typography.headlineMedium,
+                                style = MaterialTheme.typography.headlineLarge,
                                 fontWeight = FontWeight.Black
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "What are we doing?",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "What are we doing today?",
+                                style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                             LazyRow(
+                                contentPadding = PaddingValues(horizontal = 0.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -281,14 +299,15 @@ fun AssistantScreen(
                         }
                     }
 
-                    // Mode Cards
+                    // Mode Cards Header
                     item {
                         Text(
                             text = "INTELLIGENT CONTEXT MODES",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = 1.1.sp
+                            letterSpacing = 1.1.sp,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
 
@@ -304,21 +323,30 @@ fun AssistantScreen(
                     }
 
                     item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Card(
+                        Surface(
                             shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    Text("Automatic Mode Detection", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                    Text("Automatic Context Routing", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                                     Text(
-                                        "Ask anything below. Home AI routes cooking queries to kitchen stock and maintenance to warranties automatically.",
+                                        "Ask anything below. Home AI routes cooking queries to kitchen inventory and maintenance to warranties automatically.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -329,18 +357,23 @@ fun AssistantScreen(
                 }
             } else {
                 // ACTIVE CONVERSATION
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         // Scope Header notice
                         item {
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                                 shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -365,7 +398,9 @@ fun AssistantScreen(
                         if (isThinking) {
                             item {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     CircularProgressIndicator(
@@ -386,9 +421,12 @@ fun AssistantScreen(
                 }
             }
 
-            // Quick action chips for active mode
+            // Quick action suggestion chips for active mode (Horizontal Scroll)
             LazyRow(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(modeQuickActions) { q ->
@@ -407,17 +445,18 @@ fun AssistantScreen(
                 }
             }
 
-            // Universal Adaptive Input Bar
+            // Universal Adaptive Composer Bar (Anchored with Bottom Alignment & IME Handling)
             Surface(
-                tonalElevation = 3.dp,
+                tonalElevation = 4.dp,
+                shadowElevation = 4.dp,
+                color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .navigationBarsPadding(),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Bottom
                 ) {
                     // Photo Attachment Input
                     IconButton(
@@ -426,12 +465,15 @@ fun AssistantScreen(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
-                        modifier = Modifier.testTag("assistant_attach_photo_button")
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("assistant_attach_photo_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.AddPhotoAlternate,
                             contentDescription = "Attach Photo",
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
@@ -448,28 +490,45 @@ fun AssistantScreen(
                                 e.printStackTrace()
                             }
                         },
-                        modifier = Modifier.testTag("voice_assistant_button")
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("voice_assistant_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Mic,
                             contentDescription = "Voice Input",
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text(selectedMode.placeholder) },
+                        placeholder = {
+                            Text(
+                                selectedMode.placeholder,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1
+                            )
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("assistant_input_field"),
-                        maxLines = 3,
-                        shape = RoundedCornerShape(20.dp)
+                        minLines = 1,
+                        maxLines = 4,
+                        shape = RoundedCornerShape(20.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                        )
                     )
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
+                    // Send Button
                     IconButton(
                         onClick = {
                             val q = inputText.trim()
@@ -485,16 +544,18 @@ fun AssistantScreen(
                         },
                         enabled = inputText.isNotBlank() && !isThinking,
                         modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
                             .background(
-                                if (inputText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                CircleShape
+                                if (inputText.isNotBlank() && !isThinking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                             )
                             .testTag("assistant_send_button")
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
-                            tint = if (inputText.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline
+                            tint = if (inputText.isNotBlank() && !isThinking) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -568,50 +629,57 @@ fun ModeCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .testTag("mode_card_${mode.id}"),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
             else
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         ),
-        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+        border = if (isSelected)
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        else
+            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface),
+                    .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface),
                 contentAlignment = Alignment.Center
             ) {
-                Text(mode.emoji, style = MaterialTheme.typography.headlineSmall)
+                Text(mode.emoji, style = MaterialTheme.typography.titleLarge)
             }
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
                         text = mode.title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Surface(
-                        color = MaterialTheme.colorScheme.surface,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
                             text = mode.scopeBadge,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
@@ -619,13 +687,16 @@ fun ModeCard(
                 Text(
                     text = mode.shortDescription,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline
+                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -663,7 +734,9 @@ fun ChatMessageBubble(msg: ChatMessageEntity) {
 
         Column(
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
-            modifier = Modifier.widthIn(max = 300.dp)
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .widthIn(max = 340.dp)
         ) {
             Surface(
                 shape = RoundedCornerShape(
