@@ -190,4 +190,44 @@ class HomeAiCoreLogicTest {
         assertEquals(60, research.maintenanceTasks.first().intervalDays)
         assertEquals(2, research.recommendedParts.size)
     }
+
+    @Test
+    fun testItemResearchWithIntellectualInsightParsing() {
+        val json = """
+            {
+              "manualTitle": "Breville Barista Touch Manual",
+              "manualUrl": "https://www.breville.com/support",
+              "manualSummary": "ThermoJet heating and digital touch interface operation.",
+              "forumSources": ["r/espresso Reddit", "Home-Barista Forums", "CoffeeGeek"],
+              "commonIssues": [
+                {
+                  "issue": "Group Head Solenoid Scale",
+                  "symptom": "Water dripping into drip tray during extraction",
+                  "solution": "Regular descaling with citric acid formulation",
+                  "source": "r/espresso"
+                }
+              ],
+              "proTips": ["Purge group head for 2 seconds prior to locking portafilter"],
+              "maintenanceTasks": [
+                {
+                  "title": "Descale ThermoJet Block",
+                  "intervalDays": 60,
+                  "description": "Run official descaling cycle with filtered solution."
+                }
+              ],
+              "recommendedParts": ["ClaroSwiss Water Filter", "54mm Silicone Steam Ring"],
+              "specsSummary": "15 Bar Italian Pump • ThermoJet 3s heatup • 54mm portafilter",
+              "safetyNotes": "Do not submerge base unit in liquids.",
+              "intellectualInsight": "Synthesized commercial-derivative espresso architecture. High thermal response design requires preventative mineral management."
+            }
+        """.trimIndent()
+
+        val parsed = com.example.ai.gemini.GeminiParser.parseItemResearchJson(json)
+        assertEquals("Breville Barista Touch Manual", parsed.manualTitle)
+        assertEquals(3, parsed.forumSources.size)
+        assertEquals("Group Head Solenoid Scale", parsed.commonIssues.first().issue)
+        assertEquals("Synthesized commercial-derivative espresso architecture. High thermal response design requires preventative mineral management.", parsed.intellectualInsight)
+        assertEquals(1, parsed.maintenanceTasks.size)
+        assertEquals(60, parsed.maintenanceTasks.first().intervalDays)
+    }
 }

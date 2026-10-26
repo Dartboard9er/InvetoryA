@@ -223,5 +223,6 @@ data class ItemIntelligenceProfileEntity(
     val consumablesNeeded: String? = null,
     val commonProblems: String? = null,
     val safetyNotes: String? = null,
+    val intellectualInsight: String? = null,
     val lastResearchedAt: Long = System.currentTimeMillis()
 )

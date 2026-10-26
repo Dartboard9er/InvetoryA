@@ -382,6 +382,42 @@ fun ItemDetailScreen(
                     if (profile != null && profile!!.researchStatus == "KNOWLEDGE_READY") {
                         val p = profile!!
 
+                        // Intellectual Engineering Insight Banner
+                        if (!p.intellectualInsight.isNullOrEmpty()) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Icon(
+                                        Icons.Default.Psychology,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.size(22.dp).padding(top = 2.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            "Engineering Synthesis & Pedigree",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        Text(
+                                            p.intellectualInsight!!,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         // Official Manual Card if present
                         if (!p.manualUrl.isNullOrEmpty() || documents.any { it.documentType == "MANUAL" }) {
                             val manualDoc = documents.find { it.documentType == "MANUAL" }
@@ -832,12 +868,46 @@ fun ItemDetailScreen(
                     } else {
                         val res = latestResearchResult
                         Text(
-                            "✅ Successfully gathered manuals & forum intel for '${itm.name}' and populated your item records!",
+                            "✅ Intel profile and maintenance records populated for '${itm.name}'!",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         if (res != null) {
+                            if (!res.intellectualInsight.isNullOrEmpty()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Psychology,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            modifier = Modifier.size(18.dp).padding(top = 2.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                "Engineering Synthesis",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                res.intellectualInsight!!,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             if (!res.manualTitle.isNullOrEmpty()) {
                                 Text("📖 Manual: ${res.manualTitle}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             }

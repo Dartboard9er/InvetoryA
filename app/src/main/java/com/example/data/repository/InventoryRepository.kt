@@ -512,6 +512,7 @@ class InventoryRepository(
                 }
             } else null,
             safetyNotes = research.safetyNotes,
+            intellectualInsight = research.intellectualInsight,
             lastResearchedAt = now
         )
         profileDao.insertProfile(profile)
@@ -565,7 +566,9 @@ class InventoryRepository(
             enrichedNotes = research.specsSummary
         }
 
-        val enrichedSummary = if (item.aiSummary.isNullOrEmpty()) {
+        val enrichedSummary = if (!research.intellectualInsight.isNullOrEmpty()) {
+            research.intellectualInsight
+        } else if (item.aiSummary.isNullOrEmpty()) {
             "Intel synthesized from ${research.forumSources.take(3).joinToString(", ")}. " + (research.proTips.firstOrNull() ?: "")
         } else {
             item.aiSummary
@@ -591,6 +594,19 @@ class InventoryRepository(
                 source = "DOCUMENT_VERIFIED"
             )
         )
+
+        if (!research.intellectualInsight.isNullOrEmpty()) {
+            memoryDao.insertMemory(
+                AiMemoryEntity(
+                    id = UUID.randomUUID().toString(),
+                    type = "FACT",
+                    itemId = itemId,
+                    content = "Engineering Synthesis for ${item.name}: ${research.intellectualInsight}",
+                    importance = 0.90f,
+                    source = "DOCUMENT_VERIFIED"
+                )
+            )
+        }
 
         updatedItem
     }

@@ -24,7 +24,7 @@ import com.example.data.local.entities.*
         MaintenanceTaskEntity::class,
         ItemIntelligenceProfileEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class HomeAiDatabase : RoomDatabase() {
